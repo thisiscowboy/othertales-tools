@@ -1,4 +1,4 @@
-# Unified Tools Server
+# othertales unified openapi tools serer
 
 A comprehensive server that provides document storage, memory, Git versioning, and web scraping capabilities for LLMs via OpenWebUI.
 
