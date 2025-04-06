@@ -1,3 +1,4 @@
+
 import asyncio
 import hashlib
 import json
@@ -12,13 +13,11 @@ from typing import List, Optional, Dict, Any, Union, Set, Tuple
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
 import urllib.robotparser as robotparser
-
 import requests
 import git
 from git import Repo
 from fastapi import APIRouter, Body, Query, HTTPException, Path, UploadFile, File, Form, Response
 from pydantic import BaseModel, Field
-
 from app.models.documents import (
     DocumentType,
     CreateDocumentRequest,
@@ -29,10 +28,8 @@ from app.models.documents import (
 )
 from app.core.documents_service import DocumentsService
 from app.utils.config import get_config
-
 # Set up logger
 logger = logging.getLogger(__name__)
-
 # Create router
 router = APIRouter()
 
@@ -43,7 +40,7 @@ class GitService:
         self.default_email = config.default_git_email
         self.temp_auth_files = {}
         self.repo_locks = {}
-
+        
     def _get_repo(self, repo_path: str) -> git.Repo:
         """Get git repository object"""
         try:
@@ -53,13 +50,13 @@ class GitService:
             raise ValueError(f"Invalid Git repository at '{repo_path}'")
         except Exception as e:
             raise ValueError(f"Failed to get repository: {str(e)}")
-
+            
     def _get_repo_lock(self, repo_path: str) -> threading.Lock:
         """Get a lock for a specific repository to prevent concurrent modifications"""
         if repo_path not in self.repo_locks:
             self.repo_locks[repo_path] = threading.Lock()
         return self.repo_locks[repo_path]
-
+        
     def get_status(self, repo_path: str) -> Dict[str, Any]:
         """Get the status of a Git repository"""
         repo = self._get_repo(repo_path)
@@ -77,7 +74,7 @@ class GitService:
             "unstaged_files": unstaged_files,
             "untracked_files": untracked_files
         }
-
+        
     def get_diff(self, repo_path: str, file_path: Optional[str] = None, target: Optional[str] = None) -> str:
         """Get diff of changes"""
         repo = self._get_repo(repo_path)
@@ -89,15 +86,15 @@ class GitService:
             return repo.git.diff(target)
         else:
             return repo.git.diff()
-
+            
     def add_files(self, repo_path: str, files: List[str]) -> str:
         """Stage files for commit"""
         with self._get_repo_lock(repo_path):
             repo = self._get_repo(repo_path)
             repo.git.add(files)
             return "Files staged successfully"
-
-    def commit_changes(self, repo_path: str, message: str, 
+            
+    def commit_changes(self, repo_path: str, message: str,
                       author_name: Optional[str] = None,
                       author_email: Optional[str] = None) -> str:
         """Commit staged changes"""
@@ -112,14 +109,14 @@ class GitService:
             # Commit changes
             commit = repo.index.commit(message)
             return f"Committed changes with hash {commit.hexsha}"
-
+            
     def reset_changes(self, repo_path: str) -> str:
         """Reset staged changes"""
         with self._get_repo_lock(repo_path):
             repo = self._get_repo(repo_path)
             repo.git.reset()
             return "All staged changes reset"
-
+            
     def get_log(self, repo_path: str, max_count: int = 10, file_path: Optional[str] = None) -> Dict[str, Any]:
         """Get log of commits"""
         repo = self._get_repo(repo_path)
@@ -136,7 +133,7 @@ class GitService:
                 "message": commit.message.strip()
             })
         return log_data
-
+        
     def create_branch(self, repo_path: str, branch_name: str, base_branch: Optional[str] = None) -> str:
         """Create a new branch"""
         with self._get_repo_lock(repo_path):
@@ -145,7 +142,7 @@ class GitService:
                 repo.git.checkout(base_branch)
             repo.git.checkout('-b', branch_name)
             return f"Created branch '{branch_name}'"
-
+            
     def checkout_branch(self, repo_path: str, branch_name: str, create: bool = False) -> str:
         """Checkout an existing branch or create a new one"""
         with self._get_repo_lock(repo_path):
@@ -158,7 +155,7 @@ class GitService:
             else:
                 repo.git.checkout(branch_name)
             return f"Checked out branch '{branch_name}'"
-
+            
     def clone_repo(self, repo_url: str, local_path: str, auth_token: Optional[str] = None) -> str:
         """Clone a Git repository"""
         try:
@@ -171,7 +168,7 @@ class GitService:
             return f"Cloned repository to '{local_path}'"
         except Exception as e:
             raise ValueError(f"Failed to clone repository: {str(e)}")
-
+            
     def remove_file(self, repo_path: str, file_path: str) -> str:
         """Remove a file from the repository"""
         with self._get_repo_lock(repo_path):
@@ -182,7 +179,7 @@ class GitService:
                 return f"Successfully removed {file_path} from Git"
             except Exception as e:
                 raise ValueError(f"Failed to remove file: {str(e)}")
-
+                
     def get_file_content(self, repo_path: str, file_path: str, version: str) -> str:
         """Get the content of a file at a specific Git version"""
         repo = self._get_repo(repo_path)
@@ -191,7 +188,7 @@ class GitService:
             return blob
         except Exception as e:
             raise ValueError(f"Failed to get file content at version {version}: {str(e)}")
-
+            
     def configure_lfs(self, repo_path: str, file_patterns: List[str]) -> str:
         """Configure Git LFS for the repository"""
         with self._get_repo_lock(repo_path):
@@ -204,7 +201,7 @@ class GitService:
                 return "Git LFS configured successfully"
             except Exception as e:
                 raise ValueError(f"Failed to set up Git LFS: {str(e)}")
-
+                
     def batch_commit(self, repo_path: str, file_groups: List[List[str]], message_template: str) -> List[str]:
         """Commit files in batches for better performance"""
         with self._get_repo_lock(repo_path):
@@ -215,7 +212,7 @@ class GitService:
                 commit = repo.index.commit(f"{message_template} (batch {i+1}/{len(file_groups)})")
                 commit_hashes.append(commit.hexsha)
             return commit_hashes
-
+            
     def pull_changes(self, repo_path: str, remote: str = "origin", branch: str = None, all_remotes: bool = False) -> str:
         """Pull changes from a remote repository"""
         with self._get_repo_lock(repo_path):
@@ -228,7 +225,7 @@ class GitService:
                 return result
             except Exception as e:
                 raise ValueError(f"Failed to pull changes: {str(e)}")
-
+                
     def create_tag(self, repo_path: str, tag_name: str, message: str = None, commit: str = "HEAD") -> str:
         """Create a new Git tag"""
         with self._get_repo_lock(repo_path):
@@ -241,7 +238,7 @@ class GitService:
                 return f"Created tag '{tag_name}'"
             except Exception as e:
                 raise ValueError(f"Failed to create tag: {str(e)}")
-
+                
     def list_tags(self, repo_path: str) -> List[Dict[str, str]]:
         """List all tags in the repository"""
         repo = self._get_repo(repo_path)
@@ -256,7 +253,7 @@ class GitService:
             return tags
         except Exception as e:
             raise ValueError(f"Failed to list tags: {str(e)}")
-
+            
     def optimize_repo(self, repo_path: str) -> str:
         """Optimize the Git repository"""
         repo = self._get_repo(repo_path)
@@ -265,7 +262,7 @@ class GitService:
             return "Repository optimized successfully"
         except Exception as e:
             raise ValueError(f"Failed to optimize repository: {str(e)}")
-
+            
     def configure_auth(self, repo_path: str, username: str, password: str) -> str:
         """Configure authentication for repository operations"""
         if not username or not password:
@@ -278,7 +275,7 @@ class GitService:
                 config.set_value("user", "name", username)
                 config.set_value("user", "password", password)
             return "Authentication configured successfully"
-
+            
     def register_webhook(self, repo_path: str, webhook: Dict[str, Any]) -> str:
         """Register a webhook for Git events"""
         # Note: This is a placeholder implementation. In a real-world scenario, you would need to handle webhooks
@@ -288,12 +285,12 @@ class GitService:
             hook_file.write(f"#!/bin/sh\ncurl -X POST {webhook['url']} -d @- <<'EOF'\n$(git log -1 --pretty=format:'%H')\nEOF\n")
         os.chmod(hook_path, 0o755)
         return "Webhook registered successfully"
-
+        
     def restore_file_version(self, repo_path: str, file_path: str, version: str) -> bool:
         """Restore a file to a specific version"""
         try:
             # Get the file content at the specified version
-            content = self.get_file_content_at_version(repo_path, file_path, version)
+            content = self.get_file_content(repo_path, file_path, version)
             # Write that content to the current file
             full_path = os.path.join(repo_path, file_path)
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
@@ -332,7 +329,7 @@ class GitCheckoutRequest(GitRepoPath):
     branch_name: str = Field(..., description="Name of the branch to checkout")
     create: bool = Field(False, description="Create the branch if it doesn't exist")
 
-class GitCloneRequest(GitRepoPath):
+class GitCloneRequest(BaseModel):
     repo_url: str = Field(..., description="URL of the repository to clone")
     local_path: str = Field(..., description="Path to clone the repository to")
     auth_token: Optional[str] = Field(None, description="Authentication token for private repositories")

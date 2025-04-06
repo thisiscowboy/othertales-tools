@@ -2,7 +2,6 @@ from fastapi import APIRouter, Body, HTTPException, Query, Path
 from typing import Dict, Any, List, Optional, Union
 from pydantic import BaseModel, Field
 import random
-
 # Define models
 class ScrapeSingleUrlRequest(BaseModel):
     """Request to scrape a single URL"""
@@ -12,14 +11,12 @@ class ScrapeSingleUrlRequest(BaseModel):
     extract_tables: bool = Field(True, description="Extract tables from content")
     store_as_document: bool = Field(False, description="Store result as a document")
     document_tags: Optional[List[str]] = Field(None, description="Tags for document if stored")
-
 class UrlList(BaseModel):
     """Request to scrape multiple URLs"""
     urls: List[str] = Field(..., description="List of URLs to scrape")
     recursion_depth: int = Field(0, ge=0, le=3, description="How many links deep to follow (0-3)")
     store_as_documents: bool = Field(False, description="Save results as documents")
     document_tags: Optional[List[str]] = Field(None, description="Tags for documents if stored")
-
 class ScrapeCrawlRequest(BaseModel):
     """Request to crawl a website"""
     start_url: str = Field(..., description="Starting URL for crawl")
@@ -29,25 +26,21 @@ class ScrapeCrawlRequest(BaseModel):
     create_documents: bool = Field(True, description="Create documents from scraped content")
     document_tags: Optional[List[str]] = Field(None, description="Tags for documents if created")
     verification_pass: bool = Field(False, description="Run verification pass after initial crawl")
-
 class SearchAndScrapeRequest(BaseModel):
     """Request to search and scrape results"""
     query: str = Field(..., description="Search query")
     max_results: int = Field(10, ge=1, le=50, description="Maximum search results to process")
     create_documents: bool = Field(False, description="Create documents from scraped content")
     document_tags: Optional[List[str]] = Field(None, description="Tags for documents if created")
-
 class SitemapScrapeRequest(BaseModel):
     """Request to scrape URLs from a sitemap"""
     sitemap_url: str = Field(..., description="URL of the sitemap")
     max_urls: int = Field(50, ge=1, description="Maximum number of URLs to scrape")
     create_documents: bool = Field(True, description="Create documents from scraped content")
     document_tags: Optional[List[str]] = Field(None, description="Tags for documents if created")
-
 class TableData(BaseModel):
     headers: List[str] = Field(default_factory=list, description="Table headers")
     rows: List[List[str]] = Field(default_factory=list, description="Table rows")
-
 class ScraperResponse(BaseModel):
     """Response from scraper"""
     url: str = Field(..., description="Scraped URL")
@@ -59,16 +52,12 @@ class ScraperResponse(BaseModel):
     links: List[str] = Field(default_factory=list, description="Links extracted from content")
     document_id: Optional[str] = Field(None, description="Document ID if saved as document")
     error: Optional[str] = Field(None, description="Error message if scraping failed")
-
 from app.core.scraper_service import ScraperService
 from app.core.documents_service import DocumentsService
 from app.models.documents import DocumentType
-
 router = APIRouter()
-
 scraper_service = ScraperService()
 documents_service = DocumentsService()
-
 @router.post(
     "/url",
     response_model=ScraperResponse,
@@ -100,7 +89,6 @@ async def scrape_url(request: ScrapeSingleUrlRequest = Body(...)):
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Scraping failed: {str(e)}")
-
 @router.post(
     "/urls",
     response_model=List[ScraperResponse],
@@ -133,7 +121,6 @@ async def scrape_multiple_urls(request: UrlList = Body(...)):
         return results
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Scraping failed: {str(e)}")
-
 @router.post(
     "/crawl",
     response_model=Dict[str, Any],
@@ -186,7 +173,6 @@ async def crawl_website(request: ScrapeCrawlRequest = Body(...)):
         return response
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Crawling failed: {str(e)}")
-
 @router.post(
     "/search",
     response_model=List[ScraperResponse],
@@ -222,7 +208,6 @@ async def search_and_scrape(request: SearchAndScrapeRequest = Body(...)):
         return results
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Search and scrape failed: {str(e)}")
-
 @router.post(
     "/sitemap",
     response_model=Dict[str, Any],
@@ -232,7 +217,6 @@ async def search_and_scrape(request: SearchAndScrapeRequest = Body(...)):
 async def scrape_sitemap(request: SitemapScrapeRequest = Body(...)):
     """
     Extract URLs from a sitemap and scrape them.
-    
     Processes XML sitemap files and scrapes the listed URLs.
     """
     try:
