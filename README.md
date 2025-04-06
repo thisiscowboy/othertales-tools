@@ -1,4 +1,4 @@
-# othertales unified openapi tools serer
+# othertales unified openapi tools server
 
 A comprehensive server that provides document storage, memory, Git versioning, and web scraping capabilities for LLMs via OpenWebUI.
 
