@@ -1,4 +1,3 @@
-import os
 import re
 import time
 import json
@@ -6,64 +5,97 @@ import random
 import asyncio
 import hashlib
 import logging
-from typing import List, Dict, Any, Optional
-from pathlib import Path
-from urllib.parse import urljoin, urlparse
 from datetime import datetime
-import aiohttp
-from bs4 import BeautifulSoup
-from playwright.async_api import async_playwright
+from pathlib import Path
+from typing import List, Dict, Any, Optional, TypeVar, cast, Protocol, TYPE_CHECKING
+from urllib.parse import urljoin, urlparse
+
+# For type checking only
+if TYPE_CHECKING:
+    from bs4 import BeautifulSoup, Tag
+    from playwright.async_api import Page, Browser, BrowserContext, Response
+
+# Third-party imports in try/except for graceful handling
+try:
+    from bs4 import BeautifulSoup, Tag
+    HAS_BS4 = True
+except ImportError:
+    BeautifulSoup = None
+    Tag = None
+    HAS_BS4 = False
+
+try:
+    from playwright.async_api import async_playwright, Response
+    HAS_PLAYWRIGHT = True
+except ImportError:
+    async_playwright = None
+    Response = None
+    HAS_PLAYWRIGHT = False
+
 from app.utils.config import get_config
 from app.utils.markdown import html_to_markdown
+
 logger = logging.getLogger(__name__)
+
+# Define type aliases for improved type checking
+SoupType = TypeVar('SoupType')
+TagType = TypeVar('TagType')
+ResponseType = TypeVar('ResponseType')
+
 class ScraperService:
+    """Service for scraping web content and processing HTML pages"""
     def __init__(self):
+        # Check if required libraries are available
+        if not HAS_BS4 or not HAS_PLAYWRIGHT:
+            logger.error("Required libraries (BeautifulSoup or playwright) are not installed")
+            
         config = get_config()
-        # Configure rate limiting and delays
         self.min_delay = config.scraper_min_delay
         self.max_delay = config.scraper_max_delay
-        # Set up data directory
+        
         self.data_dir = Path(config.scraper_data_path)
         self.data_dir.mkdir(parents=True, exist_ok=True)
-        # Set up cache directory
+        
         self.cache_dir = self.data_dir / "cache"
         self.cache_dir.mkdir(exist_ok=True)
-        # Configure user agent for requests
-        self.user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-        # Initialize browser instance
+        
+        self.user_agent = config.user_agent
+        
         self.browser = None
         self.context = None
+
     async def get_browser(self):
         """Initialize and return the browser instance"""
         if self.browser is None:
+            if not HAS_PLAYWRIGHT:
+                raise ImportError("Playwright is not installed")
             playwright = await async_playwright().start()
             self.browser = await playwright.chromium.launch(headless=True)
         return self.browser
+
     async def close(self):
         """Close browser instance when done"""
         if self.browser:
             await self.browser.close()
             self.browser = None
+
     async def get_or_scrape_url(self, url: str, max_cache_age: int = 86400) -> Dict[str, Any]:
         """Get URL from cache or scrape it if not cached or too old"""
         try:
-            # Create cache key from URL
             cache_key = hashlib.md5(url.encode()).hexdigest()
             cache_path = self.cache_dir / f"{cache_key}.json"
-            # Check if cache exists and is fresh
+            
             if cache_path.exists():
-                # Check cache age
                 cache_age = time.time() - cache_path.stat().st_mtime
                 if cache_age < max_cache_age:
-                    # Cache is fresh, load it
                     try:
                         with open(cache_path, "r", encoding="utf-8") as f:
                             return json.load(f)
                     except Exception as e:
                         logger.warning(f"Error loading cache for {url}: {e}")
-            # Cache doesn't exist or is stale, scrape the URL
+            
             result = await self.scrape_url(url)
-            # Save result to cache if successful
+            
             if result["success"]:
                 try:
                     with open(cache_path, "w", encoding="utf-8") as f:
@@ -78,51 +110,56 @@ class ScraperService:
                 "success": False,
                 "error": str(e)
             }
-    async def _handle_rate_limiting(self, response):
+
+    async def _handle_rate_limiting(self, response: Optional["ResponseType"]) -> bool:
         """Handle rate limiting based on response codes"""
-        if response.status == 429:  # Too Many Requests
+        if response is not None and response.status == 429:  # Too Many Requests
             retry_after = response.headers.get('retry-after')
             wait_time = int(retry_after) if retry_after and retry_after.isdigit() else 60
             logger.info(f"Rate limited. Waiting for {wait_time} seconds")
             await asyncio.sleep(wait_time)
             return True
         return False
+
     async def scrape_url(self, url: str) -> Dict[str, Any]:
         """Scrape a URL and extract its content"""
         try:
+            if not HAS_PLAYWRIGHT:
+                raise ImportError("Playwright is not installed")
+                
             browser = await self.get_browser()
             context = await browser.new_context(
                 user_agent=self.user_agent
             )
             try:
-                # Configure random delay to avoid rate limiting
                 delay = random.uniform(self.min_delay, self.max_delay)
                 await asyncio.sleep(delay)
-                # Create a new page and navigate to URL
+                
                 page = await context.new_page()
                 response = await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-                if not response.ok:
+                
+                if response is None or not response.ok:
                     if await self._handle_rate_limiting(response):
-                        # Retry after rate limit cooldown
                         await page.close()
                         return await self.scrape_url(url)
                     else:
+                        status = response.status if response else 0
+                        status_text = response.status_text if response else "Unknown error"
                         return {
                             "url": url,
                             "success": False,
-                            "error": f"HTTP Error: {response.status} {response.status_text}"
+                            "error": f"HTTP Error: {status} {status_text}"
                         }
-                # Wait for content to load
+                
                 await page.wait_for_load_state("networkidle")
-                # Get page content and title
+                
                 html_content = await page.content()
                 title = await page.title()
-                # Convert HTML to Markdown
+                
                 markdown_content = html_to_markdown(html_content, url, title)
-                # Extract metadata
                 metadata = self._extract_metadata(html_content, url)
-                # Extract links for potential further scraping
                 links = self._extract_links(url, html_content)
+                
                 return {
                     "url": url,
                     "title": title,
@@ -141,20 +178,27 @@ class ScraperService:
                 "success": False,
                 "error": str(e)
             }
+
     def _extract_metadata(self, content: str, url: str) -> Dict[str, Any]:
         """Extract metadata from HTML content"""
-        metadata = {
+        metadata: Dict[str, Any] = {
             "source_url": url,
             "extracted_at": datetime.now().isoformat()
         }
         try:
+            if not HAS_BS4:
+                return metadata
+                
             soup = BeautifulSoup(content, "html.parser")
             # Extract Open Graph metadata
             for prop in ["og:title", "og:description", "og:image", "og:type", "og:site_name"]:
                 element = soup.find("meta", property=prop)
-                if element and element.get("content"):
-                    key = prop.split(":")[-1]
-                    metadata[key] = element["content"]
+                if element is not None:
+                    element_tag = cast("Tag", element)
+                    content_attr = element_tag.get("content")
+                    if content_attr:
+                        key = prop.rsplit(":", maxsplit=1)[-1]
+                        metadata[key] = content_attr
             # Extract basic metadata
             if "title" not in metadata:
                 title_tag = soup.find("title")
@@ -163,31 +207,45 @@ class ScraperService:
             # Extract description
             if "description" not in metadata:
                 desc = soup.find("meta", attrs={"name": "description"})
-                if desc and desc.get("content"):
-                    metadata["description"] = desc["content"]
+                if desc is not None:
+                    desc_tag = cast("Tag", desc)
+                    content_attr = desc_tag.get("content")
+                    if content_attr:
+                        metadata["description"] = content_attr
             # Extract LD+JSON structured data
             structured_data = self._extract_structured_data(soup)
             if structured_data:
                 metadata["structured_data"] = structured_data
         except Exception as e:
-            logger.warning(f"Error extracting metadata from {url}: {e}")
+            logger.warning("Error extracting metadata from %s: %s", url, e)
         return metadata
-    def _extract_structured_data(self, soup: BeautifulSoup) -> Dict[str, Any]:
+
+    def _extract_structured_data(self, soup: Any) -> Dict[str, Any]:
         """Extract structured data from LD+JSON scripts"""
         try:
+            if not HAS_BS4:
+                return {}
+                
             structured_data = []
             for script in soup.find_all("script", type="application/ld+json"):
                 try:
-                    data = json.loads(script.string)
-                    structured_data.append(data)
+                    script_tag = cast("Tag", script)
+                    script_string = script_tag.string
+                    if script_string:
+                        data = json.loads(script_string)
+                        structured_data.append(data)
                 except (json.JSONDecodeError, TypeError):
                     continue
-            return structured_data if structured_data else {}
+            return {"items": structured_data} if structured_data else {}
         except Exception as e:
-            logger.warning(f"Error extracting structured data: {e}")
+            logger.warning("Error extracting structured data: %s", e)
             return {}
+
     def _extract_links(self, base_url: str, content: str) -> List[str]:
         """Extract links from content"""
+        if not HAS_BS4:
+            return []
+            
         links = []
         # Extract Markdown links [text](url)
         markdown_links = re.findall(r'\[.*?\]\((https?://[^)]+)\)', content)
@@ -195,13 +253,15 @@ class ScraperService:
         # Extract HTML links from the content
         soup = BeautifulSoup(content, "html.parser")
         for a_tag in soup.find_all('a', href=True):
-            href = a_tag.get('href')
+            a_tag_cast = cast("Tag", a_tag)
+            href = a_tag_cast.get('href')
             if href:
                 # Handle relative links
-                absolute_url = urljoin(base_url, href)
+                absolute_url = urljoin(base_url, str(href))
                 links.append(absolute_url)
         # Remove duplicates and return
         return list(set(links))
+
     async def search_and_scrape(self, query: str, max_results: int = 10) -> List[Dict[str, Any]]:
         """Search for content and scrape the results"""
         # Use multiple search engines with rotation for reliability
@@ -239,23 +299,30 @@ class ScraperService:
                 continue
         # Return empty results only if all engines fail
         return []
+
     def _extract_search_result_links(self, content: str, search_url: str) -> List[str]:
         """Extract links from search result page"""
+        if not HAS_BS4:
+            return []
+            
         soup = BeautifulSoup(content, "html.parser")
         links = []
         # DuckDuckGo results
         if "duckduckgo.com" in search_url:
             for result in soup.select(".result__a"):
-                href = result.get("href")
+                result_tag = cast("Tag", result)
+                href = result_tag.get("href")
                 if href:
-                    links.append(href)
+                    links.append(str(href))
         # Bing results
         elif "bing.com" in search_url:
             for result in soup.select("li.b_algo h2 a"):
-                href = result.get("href")
+                result_tag = cast("Tag", result)
+                href = result_tag.get("href")
                 if href:
-                    links.append(href)
+                    links.append(str(href))
         return links
+
     async def scrape_with_pagination(self, url: str, max_pages: int = 5) -> Dict[str, Any]:
         """Scrape a URL and follow pagination links"""
         all_content = ""
@@ -293,8 +360,12 @@ class ScraperService:
                 "error": str(e),
                 "pages_scraped": pages_scraped
             }
+
     def _find_next_page_link(self, content: str, current_url: str) -> Optional[str]:
         """Find pagination link in content"""
+        if not HAS_BS4:
+            return None
+            
         soup = BeautifulSoup(content, "html.parser")
         # Common patterns for next page links
         next_selectors = [
@@ -309,13 +380,20 @@ class ScraperService:
         for selector in next_selectors:
             try:
                 next_link = soup.select_one(selector)
-                if next_link and next_link.get('href'):
-                    return urljoin(current_url, next_link['href'])
-            except:
+                if next_link:
+                    next_link_tag = cast("Tag", next_link)
+                    href = next_link_tag.get('href')
+                    if href:
+                        return urljoin(current_url, str(href))
+            except Exception:
                 continue
         return None
+
     async def capture_screenshot(self, url: str, full_page: bool = True) -> Dict[str, Any]:
         """Capture screenshot of a webpage"""
+        if not HAS_PLAYWRIGHT:
+            return {"url": url, "success": False, "error": "Playwright not installed"}
+            
         browser = await self.get_browser()
         context = await browser.new_context(
             user_agent=self.user_agent,
@@ -345,9 +423,13 @@ class ScraperService:
             }
         finally:
             await context.close()
+
     async def scrape_sitemap(self, sitemap_url: str, max_urls: int = 50) -> Dict[str, Any]:
         """Extract URLs from sitemap and scrape them"""
         try:
+            if not HAS_BS4:
+                return {"success": False, "error": "BeautifulSoup not installed"}
+                
             # Scrape the sitemap XML
             sitemap_result = await self.scrape_url(sitemap_url)
             if not sitemap_result["success"]:
@@ -386,6 +468,7 @@ class ScraperService:
                 "success": False,
                 "error": str(e)
             }
+
     async def crawl_website(self, start_url: str, max_pages: int = 50,
                         recursion_depth: int = 2, allowed_domains: Optional[List[str]] = None,
                         verification_pass: bool = False) -> Dict[str, Any]:
@@ -433,11 +516,13 @@ class ScraperService:
                         # Navigate to the page with timeout
                         response = await page.goto(current_url, wait_until="domcontentloaded", timeout=30000)
                         
-                        if not response.ok:
+                        if response is None or not response.ok:
+                            status = response.status if response else 0
+                            status_text = response.status_text if response else "Unknown error"
                             results.append({
                                 "url": current_url,
                                 "success": False,
-                                "error": f"HTTP Error: {response.status} {response.status_text}"
+                                "error": f"HTTP Error: {status} {status_text}"
                             })
                             await page.close()
                             continue
@@ -526,7 +611,7 @@ class ScraperService:
             # Clean up
             await context.close()
     
-    async def _perform_verification_pass(self, urls: List[str], context) -> List[Dict[str, Any]]:
+    async def _perform_verification_pass(self, urls: List[str], context: Any) -> List[Dict[str, Any]]:
         """Verification pass to check content stability"""
         verification_results = []
         
@@ -560,7 +645,7 @@ class ScraperService:
                 
         return verification_results
     
-    async def scrape_urls(self, urls: List[str], store_as_documents: bool = False) -> List[Dict[str, Any]]:
+    async def scrape_urls(self, urls: List[str]) -> List[Dict[str, Any]]:
         """Scrape multiple URLs in parallel"""
         tasks = [self.scrape_url(url) for url in urls]
         return await asyncio.gather(*tasks)

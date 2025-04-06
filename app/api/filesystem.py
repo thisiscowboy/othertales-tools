@@ -12,24 +12,27 @@ from app.models.filesystem import (
     DeleteFileRequest,
     DirectoryListingResponse,
     InvalidateCacheRequest,
-    FileExistsRequest
+    FileExistsRequest,
 )
 from app.core.filesystem_service import FilesystemService
+
 logger = logging.getLogger(__name__)
 router = APIRouter(
     responses={
         400: {"description": "Bad request"},
         403: {"description": "Access denied"},
         404: {"description": "File not found"},
-        500: {"description": "Server error"}
+        500: {"description": "Server error"},
     }
 )
 filesystem_service = FilesystemService()
+
+
 @router.post(
     "/read",
     response_class=PlainTextResponse,
     summary="Read a file",
-    description="Read the entire contents of a file from local or S3 storage"
+    description="Read the entire contents of a file from local or S3 storage",
 )
 async def read_file(request: ReadFileRequest = Body(...)):
     """
@@ -37,11 +40,7 @@ async def read_file(request: ReadFileRequest = Body(...)):
     Supports both local filesystem and S3 storage.
     """
     try:
-        return filesystem_service.read_file(
-            request.path,
-            request.storage,
-            request.bucket
-        )
+        return filesystem_service.read_file(request.path, request.storage, request.bucket)
     except ValueError as e:
         logger.warning(f"Access denied: {e}")
         raise HTTPException(status_code=403, detail=str(e))
@@ -51,11 +50,13 @@ async def read_file(request: ReadFileRequest = Body(...)):
     except Exception as e:
         logger.error(f"Error reading file: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post(
     "/write",
     response_class=PlainTextResponse,
     summary="Write to a file",
-    description="Write content to a file, overwriting if it exists"
+    description="Write content to a file, overwriting if it exists",
 )
 async def write_file(request: WriteFileRequest = Body(...)):
     """
@@ -64,18 +65,11 @@ async def write_file(request: WriteFileRequest = Body(...)):
     """
     try:
         result = filesystem_service.write_file(
-            request.path,
-            request.content,
-            request.storage,
-            request.bucket
+            request.path, request.content, request.storage, request.bucket
         )
         # Invalidate cache if caching is enabled
         try:
-            filesystem_service.invalidate_cache(
-                request.path,
-                request.storage,
-                request.bucket
-            )
+            filesystem_service.invalidate_cache(request.path, request.storage, request.bucket)
         except Exception as cache_error:
             logger.warning(f"Failed to invalidate cache: {cache_error}")
         return result
@@ -85,11 +79,13 @@ async def write_file(request: WriteFileRequest = Body(...)):
     except Exception as e:
         logger.error(f"Error writing file: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post(
     "/list",
     response_model=DirectoryListingResponse,
     summary="List directory contents",
-    description="List contents of a directory"
+    description="List contents of a directory",
 )
 async def list_directory(request: ListDirectoryRequest = Body(...)):
     """
@@ -98,19 +94,16 @@ async def list_directory(request: ListDirectoryRequest = Body(...)):
     """
     try:
         return filesystem_service.list_directory(
-            request.path,
-            request.storage,
-            request.bucket,
-            request.recursive
+            request.path, request.storage, request.bucket, request.recursive
         )
     except ValueError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.post(
-    "/search",
-    summary="Search for files",
-    description="Search for files matching a pattern"
+    "/search", summary="Search for files", description="Search for files matching a pattern"
 )
 async def search_files(request: SearchFilesRequest = Body(...)):
     """
@@ -119,22 +112,20 @@ async def search_files(request: SearchFilesRequest = Body(...)):
     """
     try:
         results = filesystem_service.search_files(
-            request.path,
-            request.pattern,
-            request.storage,
-            request.bucket,
-            request.exclude_patterns
+            request.path, request.pattern, request.storage, request.bucket, request.exclude_patterns
         )
         return {"matches": results or ["No matches found"]}
     except ValueError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.post(
     "/mkdir",
     response_class=PlainTextResponse,
     summary="Create a directory",
-    description="Create a directory and parent directories if needed"
+    description="Create a directory and parent directories if needed",
 )
 async def create_directory(request: CreateDirectoryRequest = Body(...)):
     """
@@ -142,20 +133,18 @@ async def create_directory(request: CreateDirectoryRequest = Body(...)):
     Supports both local filesystem and S3 storage.
     """
     try:
-        return filesystem_service.create_directory(
-            request.path,
-            request.storage,
-            request.bucket
-        )
+        return filesystem_service.create_directory(request.path, request.storage, request.bucket)
     except ValueError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.post(
     "/delete",
     response_class=PlainTextResponse,
     summary="Delete a file",
-    description="Delete a file from storage"
+    description="Delete a file from storage",
 )
 async def delete_file(request: DeleteFileRequest = Body(...)):
     """
@@ -163,25 +152,20 @@ async def delete_file(request: DeleteFileRequest = Body(...)):
     Supports both local filesystem and S3 storage.
     """
     try:
-        return filesystem_service.delete_file(
-            request.path,
-            request.storage,
-            request.bucket
-        )
+        return filesystem_service.delete_file(request.path, request.storage, request.bucket)
     except ValueError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.post(
     "/read-binary",
     summary="Read binary file",
     description="Read a binary file and return its contents",
     responses={
-        200: {
-            "content": {"application/octet-stream": {}},
-            "description": "Binary file content"
-        }
-    }
+        200: {"content": {"application/octet-stream": {}}, "description": "Binary file content"}
+    },
 )
 async def read_binary_file(request: ReadFileRequest = Body(...)):
     """
@@ -189,17 +173,13 @@ async def read_binary_file(request: ReadFileRequest = Body(...)):
     Returns the file as a downloadable binary response.
     """
     try:
-        content = filesystem_service.read_file_binary(
-            request.path,
-            request.storage,
-            request.bucket
-        )
+        content = filesystem_service.read_file_binary(request.path, request.storage, request.bucket)
         # Get filename from path
         filename = os.path.basename(request.path)
         return Response(
             content=content,
             media_type="application/octet-stream",
-            headers={"Content-Disposition": f"attachment; filename={filename}"}
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
         )
     except ValueError as e:
         logger.warning(f"Access denied: {e}")
@@ -210,17 +190,19 @@ async def read_binary_file(request: ReadFileRequest = Body(...)):
     except Exception as e:
         logger.error(f"Error reading binary file: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post(
     "/upload",
     response_class=PlainTextResponse,
     summary="Upload file",
-    description="Upload a file to storage"
+    description="Upload a file to storage",
 )
 async def upload_file(
     file: UploadFile = File(...),
     path: str = Form(...),
     storage: str = Form("local"),
-    bucket: Optional[str] = Form(None)
+    bucket: Optional[str] = Form(None),
 ):
     """
     Upload a file to storage.
@@ -229,18 +211,11 @@ async def upload_file(
     try:
         content = await file.read()
         result = filesystem_service.write_file_binary(
-            os.path.join(path, file.filename),
-            content,
-            storage,
-            bucket
+            os.path.join(path, file.filename), content, storage, bucket
         )
         # Invalidate cache if caching is enabled
         try:
-            filesystem_service.invalidate_cache(
-                os.path.join(path, file.filename),
-                storage,
-                bucket
-            )
+            filesystem_service.invalidate_cache(os.path.join(path, file.filename), storage, bucket)
         except Exception as cache_error:
             logger.warning(f"Failed to invalidate cache: {cache_error}")
         return result
@@ -250,10 +225,12 @@ async def upload_file(
     except Exception as e:
         logger.error(f"Error uploading file: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post(
     "/exists",
     summary="Check if file exists",
-    description="Check if a file or directory exists in storage"
+    description="Check if a file or directory exists in storage",
 )
 async def file_exists(request: FileExistsRequest = Body(...)):
     """
@@ -288,11 +265,13 @@ async def file_exists(request: FileExistsRequest = Body(...)):
     except Exception as e:
         logger.error(f"Error checking file existence: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post(
     "/invalidate-cache",
     response_class=PlainTextResponse,
     summary="Invalidate cache",
-    description="Invalidate file cache for a path or all paths"
+    description="Invalidate file cache for a path or all paths",
 )
 async def invalidate_cache(request: InvalidateCacheRequest = Body(...)):
     """
@@ -301,11 +280,7 @@ async def invalidate_cache(request: InvalidateCacheRequest = Body(...)):
     """
     try:
         if request.path:
-            filesystem_service.invalidate_cache(
-                request.path,
-                request.storage,
-                request.bucket
-            )
+            filesystem_service.invalidate_cache(request.path, request.storage, request.bucket)
             return f"Successfully invalidated cache for {request.path}"
         else:
             filesystem_service.invalidate_cache()

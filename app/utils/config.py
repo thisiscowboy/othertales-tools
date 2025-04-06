@@ -1,47 +1,79 @@
 import os
 from typing import List, Optional
-from pydantic_settings import BaseSettings
-from pydantic import Field
-from pathlib import Path
+
+# Third-party imports
 import dotenv
-# Load .env file if it exists
+from pydantic import Field as PydanticField
+
+# Use pydantic_settings if available, otherwise fallback
+try:
+    from pydantic_settings import BaseSettings
+except ImportError:
+    from pydantic import BaseSettings  # Fallback for older pydantic versions
+
+# Load environment variables
 dotenv.load_dotenv()
 
-LANGUAGE: python
-SIZE: 2264 bytes
-================================================================================
+
 class Config(BaseSettings):
-    # Server settings
-    server_host: str = Field(os.getenv("SERVER_HOST", "0.0.0.0"), env="SERVER_HOST")
-    server_port: int = Field(os.getenv("SERVER_PORT", 8000), env="SERVER_PORT")
-    dev_mode: bool = Field(os.getenv("DEV_MODE", "False").lower() == "true", env="DEV_MODE")
-    # Filesystem settings
-    allowed_directories: List[str] = Field(default_factory=lambda: os.getenv("ALLOWED_DIRS", "./data").split(","))
-    file_cache_enabled: bool = Field(os.getenv("FILE_CACHE_ENABLED", "False").lower() == "true", env="FILE_CACHE_ENABLED")
-    # Memory settings
-    memory_file_path: str = Field(os.getenv("MEMORY_FILE_PATH", "./data/memory.json"), env="MEMORY_FILE_PATH")
-    use_graph_db: bool = Field(os.getenv("USE_GRAPH_DB", "False").lower() == "true", env="USE_GRAPH_DB")
-    # Git settings
-    default_git_username: str = Field(os.getenv("DEFAULT_COMMIT_USERNAME", "UnifiedTools"), env="DEFAULT_COMMIT_USERNAME")
-    default_git_email: str = Field(os.getenv("DEFAULT_COMMIT_EMAIL", "tools@example.com"), env="DEFAULT_COMMIT_EMAIL")
-    # S3 settings
-    s3_access_key: Optional[str] = Field(os.getenv("S3_ACCESS_KEY"), env="S3_ACCESS_KEY")
-    s3_secret_key: Optional[str] = Field(os.getenv("S3_SECRET_KEY"), env="S3_SECRET_KEY")
-    s3_region: Optional[str] = Field(os.getenv("S3_REGION"), env="S3_REGION")
-    s3_bucket: Optional[str] = Field(os.getenv("S3_BUCKET"), env="S3_BUCKET")
-    # Scraper settings
-    scraper_min_delay: float = Field(float(os.getenv("SCRAPER_MIN_DELAY", "3")), env="SCRAPER_MIN_DELAY")
-    scraper_max_delay: float = Field(float(os.getenv("SCRAPER_MAX_DELAY", "7")), env="SCRAPER_MAX_DELAY")
-    user_agent: str = Field(os.getenv("USER_AGENT", "Mozilla/5.0 (compatible; UnifiedToolsServer/1.0)"), env="USER_AGENT")
-    # Set default data path
-    scraper_data_path: str = Field(os.getenv("SCRAPER_DATA_PATH", "./data/scraped"), env="SCRAPER_DATA_PATH")
+    server_host: str = PydanticField(default=os.getenv("SERVER_HOST", "0.0.0.0"))
+    server_port: int = PydanticField(default=int(os.getenv("SERVER_PORT", "8000")))
+    dev_mode: bool = PydanticField(default=os.getenv("DEV_MODE", "False").lower() == "true")
+
+    allowed_directories: List[str] = PydanticField(
+        default_factory=lambda: os.getenv("ALLOWED_DIRS", "./data").split(",")
+    )
+    file_cache_enabled: bool = PydanticField(
+        default=os.getenv("FILE_CACHE_ENABLED", "False").lower() == "true"
+    )
+
+    memory_file_path: str = PydanticField(
+        default=os.getenv("MEMORY_FILE_PATH", "./data/memory.json")
+    )
+    use_graph_db: bool = PydanticField(
+        default=os.getenv("USE_GRAPH_DB", "False").lower() == "true"
+    )
+
+    default_git_username: str = PydanticField(
+        default=os.getenv("DEFAULT_COMMIT_USERNAME", "UnifiedTools")
+    )
+    default_git_email: str = PydanticField(
+        default=os.getenv("DEFAULT_COMMIT_EMAIL", "tools@example.com")
+    )
+
+    s3_access_key: Optional[str] = PydanticField(default=os.getenv("S3_ACCESS_KEY"))
+    s3_secret_key: Optional[str] = PydanticField(default=os.getenv("S3_SECRET_KEY"))
+    s3_region: Optional[str] = PydanticField(default=os.getenv("S3_REGION"))
+    s3_bucket: Optional[str] = PydanticField(default=os.getenv("S3_BUCKET"))
+
+    scraper_min_delay: float = PydanticField(
+        default=float(os.getenv("SCRAPER_MIN_DELAY", "3"))
+    )
+    scraper_max_delay: float = PydanticField(
+        default=float(os.getenv("SCRAPER_MAX_DELAY", "7"))
+    )
+    user_agent: str = PydanticField(
+        default=os.getenv("USER_AGENT", "Mozilla/5.0 (compatible; UnifiedToolsServer/1.0)")
+    )
+    scraper_data_path: str = PydanticField(
+        default=os.getenv("SCRAPER_DATA_PATH", "./data/scraped")
+    )
+
+    # Special configuration for pydantic
+    model_config = {
+        "env_file": ".env",
+        "case_sensitive": False,
+    }
+
+
+# Singleton instance using function attribute pattern
+def get_config() -> Config:
+    """
+    Get the singleton configuration instance.
     
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
-_config = None
-def get_config():
-    global _config
-    if _config is None:
-        _config = Config()
-    return _config
+    Returns:
+        Config: The configuration object with settings from environment variables
+    """
+    if not hasattr(get_config, "_config_instance"):
+        get_config._config_instance = Config()
+    return get_config._config_instance

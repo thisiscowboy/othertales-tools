@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from app.api import filesystem, memory, git, scraper, documents
 from app.utils.config import get_config
+
 app = FastAPI(
     title="othertales System Tools",
     version="1.0.0",
@@ -32,6 +33,8 @@ app.include_router(memory.router, prefix="/memory", tags=["Memory"])
 app.include_router(git.router, prefix="/git", tags=["Git"])
 app.include_router(scraper.router, prefix="/scraper", tags=["Web Scraper"])
 app.include_router(documents.router, prefix="/docs", tags=["Document Management"])
+
+
 # Custom OpenAPI schema generator optimized for Open WebUI
 def custom_openapi():
     if app.openapi_schema:
@@ -50,21 +53,30 @@ def custom_openapi():
     openapi_schema["info"]["x-openwebui-toolkit"] = {
         "category": "document-management",
         "capabilities": ["document-storage", "web-scraping", "git-versioning", "memory"],
-        "auth_required": False
+        "auth_required": False,
     }
     app.openapi_schema = openapi_schema
     return app.openapi_schema
+
+
 # Set custom OpenAPI schema generator
 app.openapi = custom_openapi
+
+
 @app.get("/")
 async def root():
     return {
         "message": "Unified Tools Server API",
         "services": ["filesystem", "memory", "git", "scraper", "documents"],
         "version": "1.0.0",
-        "openapi_url": "/openapi.json"
+        "openapi_url": "/openapi.json",
     }
+
+
 if __name__ == "__main__":
     import uvicorn
+
     config = get_config()
-    uvicorn.run("main:app", host=config.server_host, port=config.server_port, reload=config.dev_mode)
+    uvicorn.run(
+        "main:app", host=config.server_host, port=config.server_port, reload=config.dev_mode
+    )

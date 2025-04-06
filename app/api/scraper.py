@@ -5,24 +5,24 @@ from app.models.scraper import (
     UrlList,
     ScrapeCrawlRequest,
     SearchAndScrapeRequest,
-    ScraperResponse
+    ScraperResponse,
 )
 from app.core.scraper_service import ScraperService
 from app.core.documents_service import DocumentsService
 from app.models.documents import DocumentType
+
 router = APIRouter(
-    responses={
-        400: {"description": "Bad request"},
-        500: {"description": "Scraping failed"}
-    }
+    responses={400: {"description": "Bad request"}, 500: {"description": "Scraping failed"}}
 )
 scraper_service = ScraperService()
 documents_service = DocumentsService()
+
+
 @router.post(
     "/url",
     response_model=ScraperResponse,
     summary="Scrape a single URL",
-    description="Extract content from a web page and convert to Markdown"
+    description="Extract content from a web page and convert to Markdown",
 )
 async def scrape_url(request: ScrapeSingleUrlRequest = Body(...)):
     """
@@ -31,9 +31,7 @@ async def scrape_url(request: ScrapeSingleUrlRequest = Body(...)):
     """
     try:
         result = await scraper_service.scrape_url(
-            request.url,
-            request.wait_for_selector,
-            request.wait_for_timeout
+            request.url, request.wait_for_selector, request.wait_for_timeout
         )
         # If requested, store as document
         if request.store_as_document and result["success"]:
@@ -43,17 +41,19 @@ async def scrape_url(request: ScrapeSingleUrlRequest = Body(...)):
                 document_type=DocumentType.WEBPAGE,
                 metadata=result["metadata"],
                 tags=request.document_tags,
-                source_url=result["url"]
+                source_url=result["url"],
             )
             result["document_id"] = doc["id"]
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Scraping failed: {str(e)}")
+
+
 @router.post(
     "/urls",
     response_model=List[ScraperResponse],
     summary="Scrape multiple URLs",
-    description="Scrape multiple URLs in parallel"
+    description="Scrape multiple URLs in parallel",
 )
 async def scrape_multiple_urls(request: UrlList = Body(...)):
     """
@@ -73,7 +73,7 @@ async def scrape_multiple_urls(request: UrlList = Body(...)):
                             document_type=DocumentType.WEBPAGE,
                             metadata=result["metadata"],
                             tags=request.document_tags,
-                            source_url=result["url"]
+                            source_url=result["url"],
                         )
                         results[i]["document_id"] = doc["id"]
                     except Exception as e:
@@ -81,11 +81,13 @@ async def scrape_multiple_urls(request: UrlList = Body(...)):
         return results
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Scraping failed: {str(e)}")
+
+
 @router.post(
     "/crawl",
     response_model=Dict[str, Any],
     summary="Crawl website",
-    description="Crawl a website starting from a URL"
+    description="Crawl a website starting from a URL",
 )
 async def crawl_website(request: ScrapeCrawlRequest = Body(...)):
     """
@@ -99,13 +101,13 @@ async def crawl_website(request: ScrapeCrawlRequest = Body(...)):
             request.max_pages,
             request.recursion_depth,
             request.allowed_domains,
-            request.verification_pass  # Pass the verification_pass parameter
+            request.verification_pass,  # Pass the verification_pass parameter
         )
         response = {
             "pages_crawled": results.get("pages_crawled", 0),
             "start_url": request.start_url,
             "success_count": results.get("success_count", 0),
-            "failed_count": results.get("failed_count", 0)
+            "failed_count": results.get("failed_count", 0),
         }
         # Include verification results if available
         if "verification_results" in results:
@@ -123,7 +125,7 @@ async def crawl_website(request: ScrapeCrawlRequest = Body(...)):
                             document_type=DocumentType.WEBPAGE,
                             metadata=result["metadata"],
                             tags=request.document_tags,
-                            source_url=result["url"]
+                            source_url=result["url"],
                         )
                         document_ids.append(doc["id"])
                     except Exception:
@@ -133,11 +135,13 @@ async def crawl_website(request: ScrapeCrawlRequest = Body(...)):
         return response
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Crawling failed: {str(e)}")
+
+
 @router.post(
     "/search",
     response_model=List[ScraperResponse],
     summary="Search and scrape",
-    description="Search for content and scrape the results"
+    description="Search for content and scrape the results",
 )
 async def search_and_scrape(request: SearchAndScrapeRequest = Body(...)):
     """
@@ -145,10 +149,7 @@ async def search_and_scrape(request: SearchAndScrapeRequest = Body(...)):
     Performs a web search and scrapes the top results.
     """
     try:
-        results = await scraper_service.search_and_scrape(
-            request.query,
-            request.max_results
-        )
+        results = await scraper_service.search_and_scrape(request.query, request.max_results)
         # If requested, create documents
         if request.create_documents:
             for i, result in enumerate(results):
@@ -160,7 +161,7 @@ async def search_and_scrape(request: SearchAndScrapeRequest = Body(...)):
                             document_type=DocumentType.WEBPAGE,
                             metadata=result["metadata"],
                             tags=request.document_tags,
-                            source_url=result["url"]
+                            source_url=result["url"],
                         )
                         results[i]["document_id"] = doc["id"]
                     except Exception:
@@ -168,15 +169,16 @@ async def search_and_scrape(request: SearchAndScrapeRequest = Body(...)):
         return results
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Search and scrape failed: {str(e)}")
+
+
 @router.post(
     "/screenshot",
     response_model=Dict[str, Any],
     summary="Capture screenshot",
-    description="Capture screenshot of a webpage"
+    description="Capture screenshot of a webpage",
 )
 async def capture_screenshot(
-    url: str = Body(..., embed=True),
-    full_page: bool = Body(True, embed=True)
+    url: str = Body(..., embed=True), full_page: bool = Body(True, embed=True)
 ):
     """
     Capture a screenshot of a URL.
