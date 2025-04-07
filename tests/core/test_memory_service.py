@@ -36,8 +36,8 @@ class TestMemoryService:
     def test_create_entities(self, memory_service_fixture):
         # Test creating entities
         entities = [
-            {"name": "Test Entity 1", "entity_type": "person", "properties": {"age": 30}},
-            {"name": "Test Entity 2", "entity_type": "organization", "properties": {"size": "large"}},
+            {"name": "Test Entity 1", "entity_type": "person", "properties": {"age": 30}, "observations": []},
+            {"name": "Test Entity 2", "entity_type": "organization", "properties": {"size": "large"}, "observations": []},
         ]
         
         result = memory_service_fixture.create_entities(entities)
@@ -59,8 +59,8 @@ class TestMemoryService:
     def test_create_relations(self, memory_service_fixture):
         # First create entities
         entities = [
-            {"name": "Person A", "entity_type": "person"},
-            {"name": "Company B", "entity_type": "organization"},
+            {"name": "Person A", "entity_type": "person", "observations": []},
+            {"name": "Company B", "entity_type": "organization", "observations": []},
         ]
         memory_service_fixture.create_entities(entities)
         
@@ -87,9 +87,9 @@ class TestMemoryService:
     def test_query_graph(self, memory_service_fixture):
         # Set up a test graph
         entities = [
-            {"name": "Alice", "entity_type": "person", "properties": {"age": 25}},
-            {"name": "Bob", "entity_type": "person", "properties": {"age": 30}},
-            {"name": "TechCorp", "entity_type": "company", "properties": {"industry": "tech"}},
+            {"name": "Alice", "entity_type": "person", "properties": {"age": 25}, "observations": []},
+            {"name": "Bob", "entity_type": "person", "properties": {"age": 30}, "observations": []},
+            {"name": "TechCorp", "entity_type": "company", "properties": {"industry": "tech"}, "observations": []},
         ]
         memory_service_fixture.create_entities(entities)
         
@@ -144,8 +144,8 @@ class TestMemoryService:
     def test_delete_entities(self, memory_service_fixture):
         # Create entities
         entities = [
-            {"name": "Entity1", "entity_type": "test"},
-            {"name": "Entity2", "entity_type": "test"},
+            {"name": "Entity1", "entity_type": "test", "observations": []},
+            {"name": "Entity2", "entity_type": "test", "observations": []},
         ]
         memory_service_fixture.create_entities(entities)
         
@@ -170,10 +170,12 @@ class TestMemoryService:
     def test_delete_relations(self, memory_service_fixture):
         # Create entities and relations
         entities = [
-            {"name": "NodeA", "entity_type": "test"},
-            {"name": "NodeB", "entity_type": "test"},
-            {"name": "NodeC", "entity_type": "test"},
+            {"name": "NodeA", "entity_type": "test", "observations": []},
+            {"name": "NodeB", "entity_type": "test", "observations": []},
+            {"name": "NodeC", "entity_type": "test", "observations": []},
         ]
+        memory_service_fixture.create_entities(entities)
+        
         relations = [
             {"source": "NodeA", "target": "NodeB", "relation_type": "linked"},
             {"source": "NodeA", "target": "NodeC", "relation_type": "linked"},
@@ -194,10 +196,10 @@ class TestMemoryService:
     def test_entity_connections(self, memory_service_fixture):
         # Create entities and relations for testing connections
         entities = [
-            {"name": "Center", "entity_type": "test"},
-            {"name": "Connected1", "entity_type": "test"},
-            {"name": "Connected2", "entity_type": "test"},
-            {"name": "Unconnected", "entity_type": "test"},
+            {"name": "Center", "entity_type": "test", "observations": []},
+            {"name": "Connected1", "entity_type": "test", "observations": []},
+            {"name": "Connected2", "entity_type": "test", "observations": []},
+            {"name": "Unconnected", "entity_type": "test", "observations": []},
         ]
         memory_service_fixture.create_entities(entities)
         

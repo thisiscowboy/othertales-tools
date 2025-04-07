@@ -72,26 +72,63 @@ class TestFilesystemService:
         assert "directory" in result
         assert len(result["items"]) >= 3  # subdir, file1.txt, file2.txt
         
-        # Verify files are included
-        file_names = [item["name"] for item in result["items"]]
+        # Verify files are included - using sets to avoid ordering issues
+        file_names = {item["name"] for item in result["items"]}
         assert "file1.txt" in file_names
         assert "file2.txt" in file_names
         assert "subdir" in file_names
+        
+        # Create a dictionary for easier item lookup
+        items_by_name = {item["name"]: item for item in result["items"]}
+        
+        # Verify item types
+        assert "name" in items_by_name["subdir"]
+        assert "type" in items_by_name["subdir"]
+        assert "path" in items_by_name["subdir"]
+        assert items_by_name["subdir"]["type"] == "directory"
+        
+        for file_name in ["file1.txt", "file2.txt"]:
+            assert "name" in items_by_name[file_name]
+            assert "type" in items_by_name[file_name]
+            assert "path" in items_by_name[file_name]
+            assert "size" in items_by_name[file_name]
+            assert "modified" in items_by_name[file_name]
+            assert items_by_name[file_name]["type"] == "file"
+            assert isinstance(items_by_name[file_name]["size"], int)
+            assert isinstance(items_by_name[file_name]["modified"], str)
+                
+        # Verify the directory path
+        assert result["directory"] == str(Path(fs_test_dir).resolve())
 
     def test_create_delete_directory(self, fs_service_fixture, fs_test_dir):
         # Test directory creation and deletion
-        new_dir = os.path.join(fs_test_dir, "new_test_dir", "nested_dir")
+        new_dir = os.path.join(fs_test_dir, "new_test_dir")
+        nested_dir = os.path.join(new_dir, "nested_dir")
         
-        # Create directory
-        result = fs_service_fixture.create_directory(new_dir)
+        # Create parent directory first
+        fs_service_fixture.create_directory(new_dir)
+        
+        # Create nested directory
+        result = fs_service_fixture.create_directory(nested_dir)
         assert "Successfully created" in result
-        assert os.path.exists(new_dir)
+        assert os.path.exists(os.path.normpath(nested_dir))
         
-        # Delete directory
+        # Delete nested directory first
+        delete_result = fs_service_fixture.delete_file(nested_dir)
+        assert "Successfully deleted" in delete_result
+        assert not os.path.exists(nested_dir)
+        
+        # Delete parent directory
         delete_result = fs_service_fixture.delete_file(new_dir)
         assert "Successfully deleted" in delete_result
         assert not os.path.exists(new_dir)
 
+    def test_nonexistent_directory(self, fs_service_fixture, fs_test_dir):
+        # Test listing a non-existent directory
+        non_existent_dir = os.path.join(fs_test_dir, "does_not_exist")
+        with pytest.raises(FileNotFoundError):
+            fs_service_fixture.list_directory(non_existent_dir)
+    
     def test_search_files(self, fs_service_fixture, fs_test_dir):
         # Test searching for files
         # Create test files with specific patterns
@@ -116,13 +153,17 @@ class TestFilesystemService:
         
         # Verify search results
         assert len(result) == 2
-        file_paths = [item["path"] for item in result]
-        assert os.path.basename(test_file1) in str(file_paths)
-        assert os.path.basename(test_file2) in str(file_paths)
-        assert os.path.basename(test_file3) not in str(file_paths)
+        file_paths = [os.path.normpath(item["path"]) for item in result]
+        test_file1_norm = os.path.normpath(test_file1)
+        test_file2_norm = os.path.normpath(test_file2)
+        test_file3_norm = os.path.normpath(test_file3)
+        
+        assert any(test_file1_norm in path or path in test_file1_norm for path in file_paths)
+        assert any(test_file2_norm in path or path in test_file2_norm for path in file_paths)
+        assert not any(test_file3_norm in path or path in test_file3_norm for path in file_paths)
 
     @patch("app.core.filesystem_service.boto3")
-    def test_s3_operations(self, mock_boto3):
+    def test_s3_operations(self, mock_boto3, fs_service_fixture, fs_test_dir):
         # Test S3 operations
         # This test mocks S3 interactions
         

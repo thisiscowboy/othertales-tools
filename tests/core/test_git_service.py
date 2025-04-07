@@ -22,6 +22,7 @@ def git_temp_directory():
 def git_service_fixture():
     service = GitService()
     yield service
+    # No cleanup needed for GitService
 
 
 @pytest.fixture

@@ -2,13 +2,14 @@ import shutil
 import tempfile
 from pathlib import Path
 from unittest.mock import patch, MagicMock
-
 import numpy as np
 import pytest
 
 from app.core.documents_service import DocumentsService
 from app.models.documents import DocumentType
 
+# Disable pylint warning for pytest fixtures which are intentionally redefined in test methods
+# pylint: disable=redefined-outer-name
 
 @pytest.fixture
 def docs_test_dir():
@@ -25,7 +26,8 @@ def docs_service_fixture(docs_test_dir):
     with (
         patch("app.core.documents_service.get_config"),
         patch("app.core.documents_service.GitService") as mock_git_service,
-        patch("app.core.documents_service.SentenceTransformer") as mock_transformer,
+        # Fix: Update the import path for SentenceTransformer to match where it's actually imported
+        patch("sentence_transformers.SentenceTransformer", autospec=True) as mock_transformer,
     ):
         # Set up GitService mock
         git_service_instance = MagicMock()
