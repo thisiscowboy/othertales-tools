@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Dict, Any, List, Optional, TYPE_CHECKING, cast
+from typing import Dict, Any, List, Optional, TYPE_CHECKING
 from urllib.parse import urlparse
 from app.utils.config import get_config
 
@@ -119,7 +119,7 @@ class SerperService:
             if not REQUESTS_AVAILABLE or requests is None:
                 return None
             
-            requests_lib = cast(Any, requests)
+            requests_lib = requests
             response = requests_lib.post(
                 f"{self.base_url}{endpoint}",
                 headers=headers,
@@ -132,7 +132,7 @@ class SerperService:
             try:
                 if HTTPX_AVAILABLE and httpx is not None:
                     # Use httpx if available - with explicit type check
-                    client_cls = cast(Any, httpx).AsyncClient  # Use cast for type safety
+                    client_cls = httpx.AsyncClient  # Use cast for type safety
                     async with client_cls(timeout=self.timeout) as client:
                         response = await client.post(
                             f"{self.base_url}{endpoint}", 
@@ -151,7 +151,7 @@ class SerperService:
                             }
                 elif AIOHTTP_AVAILABLE and aiohttp is not None:
                     # Use aiohttp as a fallback - with explicit type check
-                    session_cls = cast(Any, aiohttp).ClientSession  # Use cast for type safety
+                    session_cls = aiohttp.ClientSession  # Use cast for type safety
                     async with session_cls() as session:
                         async with session.post(
                             f"{self.base_url}{endpoint}",

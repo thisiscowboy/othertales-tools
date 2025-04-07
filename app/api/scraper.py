@@ -1,5 +1,4 @@
 import logging
-from typing import Dict, Any, List
 from fastapi import APIRouter, Body, HTTPException
 
 from app.models.scraper import (

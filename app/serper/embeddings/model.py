@@ -4,8 +4,6 @@ Provides text embedding generation and similarity calculation functionality.
 """
 import os
 import logging
-from typing import List, Optional
-import numpy as np
 import torch
 from transformers import AutoModel
 from dotenv import load_dotenv

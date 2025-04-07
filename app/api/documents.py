@@ -1,21 +1,10 @@
-import asyncio
-import hashlib
-import json
-import os
-import tempfile
-import time
-import random
-import uuid
 import logging
 import threading
-from typing import List, Optional, Dict, Any, Union, Set, Tuple
-from pathlib import Path
-from urllib.parse import urljoin, urlparse
-import urllib.robotparser as robotparser
+from typing import List, Optional, Dict, Any
 import requests
 import git
 from git import Repo
-from fastapi import APIRouter, Body, Query, HTTPException, Path, UploadFile, File, Form, Response
+from fastapi import APIRouter, Body, HTTPException
 from pydantic import BaseModel, Field
 from app.models.documents import (
     DocumentType,
@@ -69,7 +58,7 @@ class GitService:
         # Get untracked files
         untracked_files = repo.untracked_files
         return {
-            "clean": not (staged_files or unstaged_files or untracked_files),
+            "clean": not (staged_files or unstaged_files or untracked files),
             "current_branch": current_branch,
             "staged_files": staged_files,
             "unstaged_files": unstaged_files,
@@ -526,6 +515,6 @@ async def create_branch(request: GitBranchRequest = Body(...)):
             request.repo_path, request.branch_name, request.base_branch
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail(str(e)))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create branch: {str(e)}")
+        raise HTTPException(status_code=500, detail(f"Failed to create branch: {str(e)}")
