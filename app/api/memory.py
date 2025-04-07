@@ -1,22 +1,23 @@
-from fastapi import APIRouter, Body, HTTPException, Query, Path
-from typing import Dict, Any, List, Optional, Union
-from pydantic import BaseModel, Field
-import random
-import time
 import logging
-import json
-import os
-from pathlib import Path as PathLib
+from typing import Dict, Any, List, Optional
 
-# Import models after defining base models
+from fastapi import APIRouter, Body, HTTPException, Query, Path as FastAPIPath
+from pydantic import BaseModel, Field
+
+# Import models
 from app.models.memory import (
-    Entity,
-    Relation,
     KnowledgeGraph,
     AddEntitiesRequest,
     AddRelationsRequest,
 )
+from app.models.serper import SerperSearchRequest
+from app.models.documents import DocumentType
+from app.core.scraper_service import ScraperService
+from app.core.documents_service import DocumentsService
+from app.core.memory_service import MemoryService
 
+# Set up logger
+logger = logging.getLogger(__name__)
 
 # Define models
 class ScrapeSingleUrlRequest(BaseModel):
@@ -90,13 +91,6 @@ class ScraperResponse(BaseModel):
     error: Optional[str] = Field(None, description="Error message if scraping failed")
 
 
-# Import services after the model definitions to avoid circular imports
-from app.core.scraper_service import ScraperService
-from app.core.documents_service import DocumentsService
-from app.core.memory_service import MemoryService
-from app.models.documents import DocumentType
-from app.utils.config import get_config
-
 # Create router and services
 router = APIRouter()
 scraper_service = ScraperService()
@@ -117,9 +111,9 @@ async def scrape_url(request: ScrapeSingleUrlRequest = Body(...)):
     Extracts content, converts to Markdown, and optionally stores as a document.
     """
     try:
-        result = await scraper_service.scrape_url(
-            request.url, request.wait_for_selector, request.wait_for_timeout
-        )
+        # Call scrape_url method with just the URL
+        result = await scraper_service.scrape_url(request.url)
+        
         # If requested, store as document
         if request.store_as_document and result["success"]:
             doc = documents_service.create_document(
@@ -127,13 +121,13 @@ async def scrape_url(request: ScrapeSingleUrlRequest = Body(...)):
                 content=result["content"],
                 document_type=DocumentType.WEBPAGE,
                 metadata=result["metadata"],
-                tags=request.document_tags,
+                tags=request.document_tags or [],
                 source_url=result["url"],
             )
             result["document_id"] = doc["id"]
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Scraping failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Scraping failed: {str(e)}") from e
 
 
 @router.post(
@@ -159,7 +153,7 @@ async def scrape_multiple_urls(request: UrlList = Body(...)):
                             content=result["content"],
                             document_type=DocumentType.WEBPAGE,
                             metadata=result["metadata"],
-                            tags=request.document_tags,
+                            tags=request.document_tags or [],
                             source_url=result["url"],
                         )
                         results[i]["document_id"] = doc["id"]
@@ -167,7 +161,7 @@ async def scrape_multiple_urls(request: UrlList = Body(...)):
                         results[i]["error"] = f"Document creation failed: {str(e)}"
         return results
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Scraping failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Scraping failed: {str(e)}") from e
 
 
 @router.post(
@@ -211,7 +205,7 @@ async def crawl_website(request: ScrapeCrawlRequest = Body(...)):
                             content=result["content"],
                             document_type=DocumentType.WEBPAGE,
                             metadata=result["metadata"],
-                            tags=request.document_tags,
+                            tags=request.document_tags or [],
                             source_url=result["url"],
                         )
                         document_ids.append(doc["id"])
@@ -221,25 +215,35 @@ async def crawl_website(request: ScrapeCrawlRequest = Body(...)):
             response["document_ids"] = document_ids
         return response
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Crawling failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Crawling failed: {str(e)}") from e
 
 
 @router.post(
-    "/search",
-    response_model=List[ScraperResponse],
-    summary="Search and scrape",
-    description="Search for content and scrape the results",
+    "/serper/search",
+    response_model=Dict[str, Any],
+    summary="Enhanced search with Serper",
+    description="Search and scrape content using Serper API with enhanced results",
 )
-async def search_and_scrape(request: SearchAndScrapeRequest = Body(...)):
+async def enhanced_search(request: SerperSearchRequest = Body(...)):
     """
-    Search for content and scrape the results.
-    Performs a web search and scrapes the top results.
+    Enhanced search and scrape using Serper API.
+    Returns both search results and scraped content if requested.
     """
     try:
-        results = await scraper_service.search_and_scrape(request.query, request.max_results)
-        # If requested, create documents
-        if request.create_documents:
-            for i, result in enumerate(results):
+        # First get search results
+        results = await scraper_service.enhanced_search_and_scrape(
+            query=request.query,
+            search_type=request.search_type,
+            num_results=request.num_results,
+            max_scrape=request.max_scrape if request.auto_scrape else 0,
+            country=request.country,
+            locale=request.locale
+        )
+        
+        # If requested, create documents from scraped content
+        if request.create_documents and request.auto_scrape and results.get("scraped_content"):
+            document_ids = []
+            for i, result in enumerate(results["scraped_content"]):
                 if result.get("success", False):
                     try:
                         doc = documents_service.create_document(
@@ -247,15 +251,20 @@ async def search_and_scrape(request: SearchAndScrapeRequest = Body(...)):
                             content=result["content"],
                             document_type=DocumentType.WEBPAGE,
                             metadata=result["metadata"],
-                            tags=request.document_tags,
+                            tags=request.document_tags or [],
                             source_url=result["url"],
                         )
-                        results[i]["document_id"] = doc["id"]
-                    except Exception:
-                        pass
+                        results["scraped_content"][i]["document_id"] = doc["id"]
+                        document_ids.append(doc["id"])
+                    except Exception as e:
+                        logger.error(f"Error creating document: {str(e)}")
+            
+            results["document_ids"] = document_ids
+        
         return results
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Search and scrape failed: {str(e)}")
+        logger.error(f"Enhanced search failed: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Enhanced search failed: {str(e)}") from e
 
 
 @router.post(
@@ -282,7 +291,7 @@ async def scrape_sitemap(request: SitemapScrapeRequest = Body(...)):
                             content=scraped_url["content"],
                             document_type=DocumentType.WEBPAGE,
                             metadata=scraped_url["metadata"],
-                            tags=request.document_tags,
+                            tags=request.document_tags or [],
                             source_url=scraped_url["url"],
                         )
                         document_ids.append(doc["id"])
@@ -291,7 +300,7 @@ async def scrape_sitemap(request: SitemapScrapeRequest = Body(...)):
             result["documents_created"] = len(document_ids)
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Sitemap scraping failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Sitemap scraping failed: {str(e)}") from e
 
 
 # Add knowledge graph routes
@@ -307,7 +316,7 @@ async def add_entities(request: AddEntitiesRequest = Body(...)):
         created_entities = memory_service.create_entities(request.entities)
         return created_entities
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create entities: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to create entities: {str(e)}") from e
 
 
 @router.post(
@@ -322,7 +331,7 @@ async def add_relations(request: AddRelationsRequest = Body(...)):
         created_relations = memory_service.create_relations(request.relations)
         return created_relations
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create relations: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to create relations: {str(e)}") from e
 
 
 @router.get(
@@ -336,7 +345,7 @@ async def get_graph():
     try:
         return memory_service.get_full_graph()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get graph: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get graph: {str(e)}") from e
 
 
 @router.get(
@@ -346,16 +355,16 @@ async def get_graph():
     description="Get entities related to a specific entity",
 )
 async def get_related_entities(
-    entity_name: str = Path(..., description="Entity name"),
+    entity_name: str = FastAPIPath(..., description="Entity name"),
     max_depth: int = Query(1, description="Maximum relationship depth"),
 ):
     """Get entities related to a specific entity up to a maximum depth."""
     try:
         return memory_service.get_related_entities(entity_name, max_depth)
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get related entities: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get related entities: {str(e)}") from e
 
 
 @router.get(
@@ -364,14 +373,14 @@ async def get_related_entities(
     summary="Get entity connections",
     description="Get direct connections for an entity",
 )
-async def get_entity_connections(entity_name: str = Path(..., description="Entity name")):
+async def get_entity_connections(entity_name: str = FastAPIPath(..., description="Entity name")):
     """Get direct connections for a specific entity."""
     try:
         return memory_service.get_entity_connections(entity_name)
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get entity connections: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get entity connections: {str(e)}") from e
 
 
 @router.post(
@@ -390,9 +399,9 @@ async def find_paths(
         paths = memory_service.find_paths(start_entity, end_entity, max_length)
         return paths
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to find paths: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to find paths: {str(e)}") from e
 
 
 @router.post(
@@ -408,4 +417,4 @@ async def find_similar_entities(
     try:
         return memory_service.get_similar_entities(entity_name, threshold)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to find similar entities: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to find similar entities: {str(e)}") from e

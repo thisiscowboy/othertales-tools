@@ -30,7 +30,7 @@ class FilesystemService:
         
         if config.s3_access_key and config.s3_secret_key:
             try:
-                if not HAS_BOTO3:
+                if not HAS_BOTO3 or boto3 is None:
                     logger.warning("boto3 is not installed. S3 functionality will be disabled.")
                 else:
                     self.s3_client = boto3.client(

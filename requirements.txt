@@ -15,3 +15,6 @@ sentence_transformers==4.0.1
 uvicorn==0.34.0
 weasyprint==65.0
 gitpython==3.1.44
+
+# Serper API dependencies
+httpx>=0.24.0

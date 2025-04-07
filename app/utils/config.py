@@ -1,79 +1,84 @@
 import os
-from typing import List, Optional
+from typing import Optional, List
+from dotenv import load_dotenv
 
-# Third-party imports
-import dotenv
-from pydantic import Field as PydanticField
-
-# Use pydantic_settings if available, otherwise fallback
-try:
-    from pydantic_settings import BaseSettings
-except ImportError:
-    from pydantic import BaseSettings  # Fallback for older pydantic versions
-
-# Load environment variables
-dotenv.load_dotenv()
-
-
-class Config(BaseSettings):
-    server_host: str = PydanticField(default=os.getenv("SERVER_HOST", "0.0.0.0"))
-    server_port: int = PydanticField(default=int(os.getenv("SERVER_PORT", "8000")))
-    dev_mode: bool = PydanticField(default=os.getenv("DEV_MODE", "False").lower() == "true")
-
-    allowed_directories: List[str] = PydanticField(
-        default_factory=lambda: os.getenv("ALLOWED_DIRS", "./data").split(",")
-    )
-    file_cache_enabled: bool = PydanticField(
-        default=os.getenv("FILE_CACHE_ENABLED", "False").lower() == "true"
-    )
-
-    memory_file_path: str = PydanticField(
-        default=os.getenv("MEMORY_FILE_PATH", "./data/memory.json")
-    )
-    use_graph_db: bool = PydanticField(
-        default=os.getenv("USE_GRAPH_DB", "False").lower() == "true"
-    )
-
-    default_git_username: str = PydanticField(
-        default=os.getenv("DEFAULT_COMMIT_USERNAME", "UnifiedTools")
-    )
-    default_git_email: str = PydanticField(
-        default=os.getenv("DEFAULT_COMMIT_EMAIL", "tools@example.com")
-    )
-
-    s3_access_key: Optional[str] = PydanticField(default=os.getenv("S3_ACCESS_KEY"))
-    s3_secret_key: Optional[str] = PydanticField(default=os.getenv("S3_SECRET_KEY"))
-    s3_region: Optional[str] = PydanticField(default=os.getenv("S3_REGION"))
-    s3_bucket: Optional[str] = PydanticField(default=os.getenv("S3_BUCKET"))
-
-    scraper_min_delay: float = PydanticField(
-        default=float(os.getenv("SCRAPER_MIN_DELAY", "3"))
-    )
-    scraper_max_delay: float = PydanticField(
-        default=float(os.getenv("SCRAPER_MAX_DELAY", "7"))
-    )
-    user_agent: str = PydanticField(
-        default=os.getenv("USER_AGENT", "Mozilla/5.0 (compatible; UnifiedToolsServer/1.0)")
-    )
-    scraper_data_path: str = PydanticField(
-        default=os.getenv("SCRAPER_DATA_PATH", "./data/scraped")
-    )
-
-    # Special configuration for pydantic
-    model_config = {
-        "env_file": ".env",
-        "case_sensitive": False,
-    }
-
-
-# Singleton instance using function attribute pattern
-def get_config() -> Config:
-    """
-    Get the singleton configuration instance.
+class Config:
+    # Server settings
+    server_host: str = "0.0.0.0"
+    server_port: int = 8000
+    dev_mode: bool = False
     
-    Returns:
-        Config: The configuration object with settings from environment variables
-    """
-    if not hasattr(get_config, "_config_instance"):
-        get_config._config_instance = Config()
-    return get_config._config_instance
+    # Filesystem settings
+    allowed_directories: List[str] = ["./data"]
+    memory_file_path: str = "./data/memory.json"
+    file_cache_enabled: bool = True
+    file_cache_max_age: int = 3600  # 1 hour in seconds
+    
+    # Git settings
+    default_git_username: str = "OtherTales"
+    default_git_email: str = "system@othertales.com"
+    
+    # S3 storage settings
+    s3_access_key: Optional[str] = None
+    s3_secret_key: Optional[str] = None
+    s3_region: str = "us-east-1"
+    s3_endpoint_url: Optional[str] = None
+    
+    # Search API settings (using Serper)
+    search_api_key: Optional[str] = None  # Serper API key
+    search_provider: str = "serper"  # Provider name (for future extensibility)
+    search_default_country: str = "us"
+    search_default_locale: str = "en"
+    search_timeout: int = 30
+    search_max_retries: int = 3
+    search_retry_delay: int = 2
+    
+    # Memory settings
+    use_graph_db: bool = False
+
+config = Config()
+
+def load_dotenv_config():
+    """Load configuration from environment variables"""
+    load_dotenv()
+
+    # Server settings
+    config.server_host = os.getenv("SERVER_HOST", "0.0.0.0")
+    config.server_port = int(os.getenv("SERVER_PORT", "8000"))
+    config.dev_mode = os.getenv("DEV_MODE", "False").lower() in ("true", "1", "yes")
+    
+    # Filesystem settings
+    allowed_dirs_str = os.getenv("ALLOWED_DIRS", "./data")
+    config.allowed_directories = [d.strip() for d in allowed_dirs_str.split(",")]
+    config.memory_file_path = os.getenv("MEMORY_FILE_PATH", "./data/memory.json")
+    config.file_cache_enabled = os.getenv("FILE_CACHE_ENABLED", "True").lower() in ("true", "1", "yes")
+    config.file_cache_max_age = int(os.getenv("FILE_CACHE_MAX_AGE", "3600"))
+    
+    # Git settings
+    config.default_git_username = os.getenv("DEFAULT_COMMIT_USERNAME", "OtherTales")
+    config.default_git_email = os.getenv("DEFAULT_COMMIT_EMAIL", "system@othertales.com")
+    
+    # S3 settings
+    config.s3_access_key = os.getenv("S3_ACCESS_KEY")
+    config.s3_secret_key = os.getenv("S3_SECRET_KEY")
+    config.s3_region = os.getenv("S3_REGION", "us-east-1")
+    config.s3_endpoint_url = os.getenv("S3_ENDPOINT_URL")
+    
+    # Load search settings (both old and new keys for backward compatibility)
+    config.search_api_key = os.getenv("SEARCH_API_KEY") or os.getenv("SERPER_API_KEY")
+    config.search_provider = os.getenv("SEARCH_PROVIDER", "serper")
+    config.search_default_country = os.getenv("SEARCH_DEFAULT_COUNTRY", "us")
+    config.search_default_locale = os.getenv("SEARCH_DEFAULT_LOCALE", "en")
+    config.search_timeout = int(os.getenv("SEARCH_TIMEOUT", "30"))
+    config.search_max_retries = int(os.getenv("SEARCH_MAX_RETRIES", "3"))
+    config.search_retry_delay = int(os.getenv("SEARCH_RETRY_DELAY", "2"))
+    
+    # Memory settings
+    config.use_graph_db = os.getenv("USE_GRAPH_DB", "False").lower() in ("true", "1", "yes")
+
+def get_config() -> Config:
+    """Return the singleton config instance"""
+    return config
+
+# Load config at import time
+load_dotenv_config()

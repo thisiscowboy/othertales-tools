@@ -1,10 +1,10 @@
-import pytest
-import os
 import shutil
-import json
 import tempfile
 from pathlib import Path
 from unittest.mock import patch, MagicMock
+
+import numpy as np
+import pytest
 
 from app.core.documents_service import DocumentsService
 from app.models.documents import DocumentType
@@ -13,41 +13,37 @@ from app.models.documents import DocumentType
 @pytest.fixture
 def temp_dir():
     # Create a temporary directory for testing
-    temp_dir = tempfile.mkdtemp()
-    yield temp_dir
+    temp_dir_path = tempfile.mkdtemp()
+    yield temp_dir_path
     # Cleanup
-    shutil.rmtree(temp_dir)
+    shutil.rmtree(temp_dir_path)
 
 
 @pytest.fixture
 def documents_service(temp_dir):
     # Mock dependencies
     with (
-        patch("app.core.documents_service.get_config") as mock_config,
+        patch("app.core.documents_service.get_config"),
         patch("app.core.documents_service.GitService") as mock_git_service,
+        patch("app.core.documents_service.SentenceTransformer") as mock_transformer,
     ):
-
         # Set up GitService mock
         git_service_instance = MagicMock()
         mock_git_service.return_value = git_service_instance
+        
+        # Set up SentenceTransformer mock to avoid Hugging Face API calls
+        transformer_instance = MagicMock()
+        # Mock the encode method which will be used to generate embeddings
+        transformer_instance.encode.return_value = np.zeros((1, 384))  # Use a standard embedding size
+        mock_transformer.return_value = transformer_instance
 
         # Configure service
         service = DocumentsService(base_path=temp_dir)
-
-        # Ensure get_status always returns clean repo status
-        git_service_instance.get_status.return_value = {
-            "branch": "main",
-            "clean": True,
-            "untracked": [],
-            "modified": [],
-            "staged": [],
-        }
-
         yield service
 
 
 class TestDocumentsService:
-    def test_create_document(self, documents_service, temp_dir):
+    def test_create_document(self, documents_service):
         # Test creating a document
         doc = documents_service.create_document(
             title="Test Document",
@@ -55,14 +51,14 @@ class TestDocumentsService:
             document_type=DocumentType.GENERIC,
             metadata={"source": "test"},
             tags=["test", "document"],
-        )
+        )        
 
         # Verify document was created
         assert doc["title"] == "Test Document"
         assert doc["document_type"] == DocumentType.GENERIC.value
         assert "source" in doc["metadata"]
         assert "test" in doc["tags"]
-
+        
         # Check that document ID was generated
         assert doc["id"] is not None
 
@@ -71,7 +67,7 @@ class TestDocumentsService:
         assert doc_path.exists()
 
         # Verify content
-        content = doc_path.read_text()
+        content = doc_path.read_text(encoding="utf-8")
         assert "Test Document" in content
         assert "This is test content." in content
 
@@ -107,11 +103,11 @@ class TestDocumentsService:
             content="Updated content",
             tags=["updated", "document"],
         )
-
+        
         # Verify update
         assert updated["title"] == "Updated Title"
         assert "updated" in updated["tags"]
-
+        
         # Check the document content
         content = documents_service.get_document_content(doc["id"])
         assert content["content"] == "Updated content"
@@ -123,7 +119,7 @@ class TestDocumentsService:
             content="This document will be deleted",
             document_type=DocumentType.GENERIC,
         )
-
+        
         # Delete the document
         result = documents_service.delete_document(doc["id"])
         assert result is True
@@ -140,6 +136,7 @@ class TestDocumentsService:
     def test_search_documents(self, documents_service):
         # Create test documents
         docs = []
+        
         # Document 1
         docs.append(
             documents_service.create_document(
@@ -149,7 +146,7 @@ class TestDocumentsService:
                 tags=["search", "test"],
             )
         )
-
+        
         # Document 2
         docs.append(
             documents_service.create_document(
@@ -159,7 +156,7 @@ class TestDocumentsService:
                 tags=["search", "different"],
             )
         )
-
+        
         # Document 3 (with different type)
         docs.append(
             documents_service.create_document(
@@ -174,11 +171,11 @@ class TestDocumentsService:
         results = documents_service.search_documents("specific content")
         assert len(results) == 1
         assert results[0]["id"] == docs[0]["id"]
-
+        
         # Search by tag
         results = documents_service.search_documents("", tags=["search"])
         assert len(results) == 2
-
+        
         # Search by document type
         results = documents_service.search_documents("", doc_type=DocumentType.WEBPAGE.value)
         assert len(results) == 1
@@ -187,7 +184,9 @@ class TestDocumentsService:
     def test_get_document_versions(self, documents_service):
         # Create a document
         doc = documents_service.create_document(
-            title="Version Test", content="Initial version", document_type=DocumentType.GENERIC
+            title="Version Test", 
+            content="Initial version", 
+            document_type=DocumentType.GENERIC
         )
 
         # Mock git log response
@@ -219,7 +218,7 @@ class TestDocumentsService:
 
     @patch("app.core.documents_service.markdown")
     @patch("weasyprint.HTML")
-    def test_convert_document_format(self, mock_weasyprint, mock_markdown, documents_service):
+    def test_convert_document_format(self, mock_weasyprint, mock_markdown):
         # Create a document
         doc = documents_service.create_document(
             title="Convert Format Test",
