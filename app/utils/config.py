@@ -1,5 +1,5 @@
 import os
-from typing import List
+from typing import List, Optional, Dict, Any
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
 from pydantic import Field
@@ -17,8 +17,8 @@ class Config(BaseSettings):
     file_cache_max_age: int = 3600  # 1 hour in seconds
     
     # Git settings
-    default_git_username: str = "OtherTales"
-    default_git_email: str = "system@othertales.com"
+    default_git_username: str = "othertales"
+    default_git_email: str = "hello@othertales.co"
     
     # S3 storage settings
     s3_access_key: Optional[str] = None

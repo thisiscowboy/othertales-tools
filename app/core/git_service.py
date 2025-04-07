@@ -1,7 +1,7 @@
 import os
 import logging
 import threading
-from typing import List, Any, Optional
+from typing import List, Any, Optional, Dict, Tuple, Union  # Add this import line
 
 # Try to import git module at top level
 try:
