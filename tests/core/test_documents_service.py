@@ -11,7 +11,7 @@ from app.models.documents import DocumentType
 
 
 @pytest.fixture
-def temp_dir():
+def docs_test_dir():
     # Create a temporary directory for testing
     temp_dir_path = tempfile.mkdtemp()
     yield temp_dir_path
@@ -20,7 +20,7 @@ def temp_dir():
 
 
 @pytest.fixture
-def documents_service(temp_dir):
+def docs_service_fixture(docs_test_dir):
     # Mock dependencies
     with (
         patch("app.core.documents_service.get_config"),
@@ -38,14 +38,14 @@ def documents_service(temp_dir):
         mock_transformer.return_value = transformer_instance
 
         # Configure service
-        service = DocumentsService(base_path=temp_dir)
+        service = DocumentsService(base_path=docs_test_dir)
         yield service
 
 
 class TestDocumentsService:
-    def test_create_document(self, documents_service):
+    def test_create_document(self, docs_service_fixture, docs_test_dir):
         # Test creating a document
-        doc = documents_service.create_document(
+        doc = docs_service_fixture.create_document(
             title="Test Document",
             content="This is test content.",
             document_type=DocumentType.GENERIC,
@@ -63,7 +63,7 @@ class TestDocumentsService:
         assert doc["id"] is not None
 
         # Verify file exists
-        doc_path = Path(temp_dir) / DocumentType.GENERIC.value / f"{doc['id']}.md"
+        doc_path = Path(docs_test_dir) / DocumentType.GENERIC.value / f"{doc['id']}.md"
         assert doc_path.exists()
 
         # Verify content
@@ -71,25 +71,25 @@ class TestDocumentsService:
         assert "Test Document" in content
         assert "This is test content." in content
 
-    def test_get_document(self, documents_service):
+    def test_get_document(self, docs_service_fixture):
         # Create a document
-        doc = documents_service.create_document(
+        doc = docs_service_fixture.create_document(
             title="Get Test",
             content="Content for retrieval test",
             document_type=DocumentType.GENERIC,
         )
 
         # Get the document
-        retrieved = documents_service.get_document(doc["id"])
+        retrieved = docs_service_fixture.get_document(doc["id"])
 
         # Verify retrieval
         assert retrieved["id"] == doc["id"]
         assert retrieved["title"] == "Get Test"
         assert "Content for retrieval" in retrieved["content_preview"]
 
-    def test_update_document(self, documents_service):
+    def test_update_document(self, docs_service_fixture):
         # Create a document
-        doc = documents_service.create_document(
+        doc = docs_service_fixture.create_document(
             title="Original Title",
             content="Original content",
             document_type=DocumentType.GENERIC,
@@ -97,7 +97,7 @@ class TestDocumentsService:
         )
 
         # Update the document
-        updated = documents_service.update_document(
+        updated = docs_service_fixture.update_document(
             doc_id=doc["id"],
             title="Updated Title",
             content="Updated content",
@@ -109,37 +109,37 @@ class TestDocumentsService:
         assert "updated" in updated["tags"]
         
         # Check the document content
-        content = documents_service.get_document_content(doc["id"])
+        content = docs_service_fixture.get_document_content(doc["id"])
         assert content["content"] == "Updated content"
 
-    def test_delete_document(self, documents_service):
+    def test_delete_document(self, docs_service_fixture):
         # Create a document
-        doc = documents_service.create_document(
+        doc = docs_service_fixture.create_document(
             title="To Delete",
             content="This document will be deleted",
             document_type=DocumentType.GENERIC,
         )
         
         # Delete the document
-        result = documents_service.delete_document(doc["id"])
+        result = docs_service_fixture.delete_document(doc["id"])
         assert result is True
 
         # Verify document is gone
-        assert documents_service.get_document(doc["id"]) is None
+        assert docs_service_fixture.get_document(doc["id"]) is None
 
         # Verify file is removed
         doc_path = (
-            Path(documents_service.base_path) / DocumentType.GENERIC.value / f"{doc['id']}.md"
+            Path(docs_service_fixture.base_path) / DocumentType.GENERIC.value / f"{doc['id']}.md"
         )
         assert not doc_path.exists()
 
-    def test_search_documents(self, documents_service):
+    def test_search_documents(self, docs_service_fixture):
         # Create test documents
         docs = []
         
         # Document 1
         docs.append(
-            documents_service.create_document(
+            docs_service_fixture.create_document(
                 title="Search Test One",
                 content="This document has specific content to find.",
                 document_type=DocumentType.GENERIC,
@@ -149,7 +149,7 @@ class TestDocumentsService:
         
         # Document 2
         docs.append(
-            documents_service.create_document(
+            docs_service_fixture.create_document(
                 title="Search Test Two",
                 content="Another document with different content.",
                 document_type=DocumentType.GENERIC,
@@ -159,7 +159,7 @@ class TestDocumentsService:
         
         # Document 3 (with different type)
         docs.append(
-            documents_service.create_document(
+            docs_service_fixture.create_document(
                 title="Different Type",
                 content="This has a different document type.",
                 document_type=DocumentType.WEBPAGE,
@@ -168,29 +168,29 @@ class TestDocumentsService:
         )
 
         # Search by content
-        results = documents_service.search_documents("specific content")
+        results = docs_service_fixture.search_documents("specific content")
         assert len(results) == 1
         assert results[0]["id"] == docs[0]["id"]
         
         # Search by tag
-        results = documents_service.search_documents("", tags=["search"])
+        results = docs_service_fixture.search_documents("", tags=["search"])
         assert len(results) == 2
         
         # Search by document type
-        results = documents_service.search_documents("", doc_type=DocumentType.WEBPAGE.value)
+        results = docs_service_fixture.search_documents("", doc_type=DocumentType.WEBPAGE.value)
         assert len(results) == 1
         assert results[0]["id"] == docs[2]["id"]
 
-    def test_get_document_versions(self, documents_service):
+    def test_get_document_versions(self, docs_service_fixture):
         # Create a document
-        doc = documents_service.create_document(
+        doc = docs_service_fixture.create_document(
             title="Version Test", 
             content="Initial version", 
             document_type=DocumentType.GENERIC
         )
 
         # Mock git log response
-        documents_service.git_service.get_log.return_value = {
+        docs_service_fixture.git_service.get_log.return_value = {
             "commits": [
                 {
                     "hash": "abc123",
@@ -208,7 +208,7 @@ class TestDocumentsService:
         }
 
         # Get document versions
-        versions = documents_service.get_document_versions(doc["id"])
+        versions = docs_service_fixture.get_document_versions(doc["id"])
 
         # Verify versions
         assert len(versions) == 2
@@ -218,9 +218,9 @@ class TestDocumentsService:
 
     @patch("app.core.documents_service.markdown")
     @patch("weasyprint.HTML")
-    def test_convert_document_format(self, mock_weasyprint, mock_markdown):
+    def test_convert_document_format(self, mock_weasyprint, mock_markdown, docs_service_fixture):
         # Create a document
-        doc = documents_service.create_document(
+        doc = docs_service_fixture.create_document(
             title="Convert Format Test",
             content="# Heading\nContent to convert",
             document_type=DocumentType.GENERIC,
@@ -235,7 +235,7 @@ class TestDocumentsService:
         mock_weasyprint.return_value = mock_pdf
 
         # Convert document to PDF
-        result = documents_service.convert_document_format(doc["id"], "pdf")
+        result = docs_service_fixture.convert_document_format(doc["id"], "pdf")
 
         # Verify conversion
         assert mock_markdown.markdown.called

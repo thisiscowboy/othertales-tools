@@ -10,7 +10,7 @@ from app.core.filesystem_service import FilesystemService
 
 
 @pytest.fixture
-def test_temp_dir():
+def fs_test_dir():
     # Create a temporary directory for testing
     temp_dir_path = tempfile.mkdtemp()
     yield temp_dir_path
@@ -19,10 +19,10 @@ def test_temp_dir():
 
 
 @pytest.fixture
-def fs_service(test_temp_dir):
+def fs_service_fixture(fs_test_dir):
     # Configure service with test paths
     with patch("app.core.filesystem_service.get_config") as mock_config:
-        mock_config.return_value.allowed_directories = [test_temp_dir]
+        mock_config.return_value.allowed_directories = [fs_test_dir]
         mock_config.return_value.file_cache_enabled = False
         mock_config.return_value.s3_access_key = None
         mock_config.return_value.s3_secret_key = None
@@ -31,32 +31,32 @@ def fs_service(test_temp_dir):
 
 
 class TestFilesystemService:
-    def test_normalize_path(self, fs_service):
+    def test_normalize_path(self, fs_service_fixture, fs_test_dir):
         # Test path normalization
-        test_path = os.path.join(test_temp_dir, "test_file.txt")
-        normalized = fs_service.normalize_path(test_path)
+        test_path = os.path.join(fs_test_dir, "test_file.txt")
+        normalized = fs_service_fixture.normalize_path(test_path)
         assert str(normalized) == str(Path(test_path).resolve())
 
-    def test_read_write_file(self, fs_service):
+    def test_read_write_file(self, fs_service_fixture, fs_test_dir):
         # Test writing and reading a file
-        test_path = os.path.join(test_temp_dir, "test_file.txt")
+        test_path = os.path.join(fs_test_dir, "test_file.txt")
         content = "Test content"
 
         # Write file
-        result = fs_service.write_file(test_path, content)
+        result = fs_service_fixture.write_file(test_path, content)
         assert "Successfully wrote to" in result
 
         # Read file
-        read_content = fs_service.read_file(test_path)
+        read_content = fs_service_fixture.read_file(test_path)
         assert read_content == content
 
-    def test_list_directory(self, fs_service):
+    def test_list_directory(self, fs_service_fixture, fs_test_dir):
         # Test directory listing
         # First create some test files
-        os.makedirs(os.path.join(test_temp_dir, "subdir"), exist_ok=True)
+        os.makedirs(os.path.join(fs_test_dir, "subdir"), exist_ok=True)
         
-        test_file1 = os.path.join(test_temp_dir, "file1.txt")
-        test_file2 = os.path.join(test_temp_dir, "file2.txt")
+        test_file1 = os.path.join(fs_test_dir, "file1.txt")
+        test_file2 = os.path.join(fs_test_dir, "file2.txt")
         
         with open(test_file1, "w", encoding="utf-8") as f:
             f.write("File 1 content")
@@ -65,7 +65,7 @@ class TestFilesystemService:
             f.write("File 2 content")
 
         # List directory
-        result = fs_service.list_directory(test_temp_dir)
+        result = fs_service_fixture.list_directory(fs_test_dir)
         
         # Verify result structure
         assert "items" in result
@@ -78,24 +78,24 @@ class TestFilesystemService:
         assert "file2.txt" in file_names
         assert "subdir" in file_names
 
-    def test_create_delete_directory(self, fs_service):
+    def test_create_delete_directory(self, fs_service_fixture, fs_test_dir):
         # Test directory creation and deletion
-        new_dir = os.path.join(test_temp_dir, "new_test_dir", "nested_dir")
+        new_dir = os.path.join(fs_test_dir, "new_test_dir", "nested_dir")
         
         # Create directory
-        result = fs_service.create_directory(new_dir)
+        result = fs_service_fixture.create_directory(new_dir)
         assert "Successfully created" in result
         assert os.path.exists(new_dir)
         
         # Delete directory
-        delete_result = fs_service.delete_file(new_dir)
+        delete_result = fs_service_fixture.delete_file(new_dir)
         assert "Successfully deleted" in delete_result
         assert not os.path.exists(new_dir)
 
-    def test_search_files(self, fs_service):
+    def test_search_files(self, fs_service_fixture, fs_test_dir):
         # Test searching for files
         # Create test files with specific patterns
-        test_dir1 = os.path.join(test_temp_dir, "search_test")
+        test_dir1 = os.path.join(fs_test_dir, "search_test")
         os.makedirs(test_dir1, exist_ok=True)
         
         test_file1 = os.path.join(test_dir1, "search_file1.txt")
@@ -112,7 +112,7 @@ class TestFilesystemService:
             f.write("Other file")
         
         # Search for files
-        result = fs_service.search_files(test_temp_dir, "search_file*.txt")
+        result = fs_service_fixture.search_files(fs_test_dir, "search_file*.txt")
         
         # Verify search results
         assert len(result) == 2
@@ -134,7 +134,7 @@ class TestFilesystemService:
         
         # Create a service with S3 enabled
         with patch("app.core.filesystem_service.get_config") as mock_config:
-            mock_config.return_value.allowed_directories = [test_temp_dir]
+            mock_config.return_value.allowed_directories = ["/test"]
             mock_config.return_value.s3_access_key = "test_key"
             mock_config.return_value.s3_secret_key = "test_secret"
             

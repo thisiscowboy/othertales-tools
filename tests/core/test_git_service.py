@@ -1,16 +1,16 @@
 import os
 import shutil
 import tempfile
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from git import Repo
 
 from app.core.git_service import GitService
 
 
 @pytest.fixture
-def temp_dir():
+def git_temp_directory():
     # Create a temporary directory for testing
     temp_dir_path = tempfile.mkdtemp()
     yield temp_dir_path
@@ -25,14 +25,12 @@ def git_service_fixture():
 
 
 @pytest.fixture
-def git_repo(temp_dir, git_service_fixture):
+def git_repo_path(git_temp_directory):
     # Initialize a Git repository for testing
-    repo_path = os.path.join(temp_dir, "test_repo")
+    repo_path = os.path.join(git_temp_directory, "test_repo")
     os.makedirs(repo_path)
 
     # Initialize git repo
-    from git import Repo  # Import inside function to avoid circular imports
-
     Repo.init(repo_path)
 
     # Create a test file and commit it
@@ -50,37 +48,37 @@ def git_repo(temp_dir, git_service_fixture):
 
 
 class TestGitService:
-    def test_get_status(self, git_service_fixture, git_repo):
+    def test_get_status(self, git_service_fixture, git_repo_path):
         # Test getting repository status
-        result = git_service_fixture.get_status(git_repo)
+        result = git_service_fixture.get_status(git_repo_path)
         
         # Verify result
         assert "current_branch" in result
         assert "is_clean" in result
         assert result["is_clean"] is True  # Repository should be clean after initialization
 
-    def test_add_and_commit(self, git_service_fixture, git_repo):
+    def test_add_and_commit(self, git_service_fixture, git_repo_path):
         # Test adding and committing changes
         # Create a new file
-        new_file = os.path.join(git_repo, "new_file.txt")
+        new_file = os.path.join(git_repo_path, "new_file.txt")
         with open(new_file, "w", encoding="utf-8") as f:
             f.write("New file content")
         
         # Add the file
-        add_result = git_service_fixture.add_files(git_repo, ["new_file.txt"])
+        add_result = git_service_fixture.add_files(git_repo_path, ["new_file.txt"])
         assert "Staged files" in add_result
         
         # Commit the changes
-        commit_result = git_service_fixture.commit_changes(git_repo, "Added new file")
+        commit_result = git_service_fixture.commit_changes(git_repo_path, "Added new file")
         assert "Committed" in commit_result
         
         # Verify repository status
-        status = git_service_fixture.get_status(git_repo)
+        status = git_service_fixture.get_status(git_repo_path)
         assert status["is_clean"] is True  # Repository should be clean after commit
 
-    def test_get_log(self, git_service_fixture, git_repo):
+    def test_get_log(self, git_service_fixture, git_repo_path):
         # Test getting commit log
-        log_result = git_service_fixture.get_log(git_repo)
+        log_result = git_service_fixture.get_log(git_repo_path)
         
         # Verify log structure
         assert "commits" in log_result
@@ -94,57 +92,54 @@ class TestGitService:
         assert "date" in latest_commit
         assert latest_commit["message"] == "Initial commit"
 
-    def test_create_checkout_branch(self, git_service_fixture, git_repo):
+    def test_create_checkout_branch(self, git_service_fixture, git_repo_path):
         # Test creating and checking out a branch
         # Create a new file and commit it to master
-        new_file = os.path.join(git_repo, "master_file.txt")
+        new_file = os.path.join(git_repo_path, "master_file.txt")
         with open(new_file, "w", encoding="utf-8") as f:
             f.write("Master branch file")
         
-        git_service_fixture.add_files(git_repo, ["master_file.txt"])
-        git_service_fixture.commit_changes(git_repo, "Added file on master")
+        git_service_fixture.add_files(git_repo_path, ["master_file.txt"])
+        git_service_fixture.commit_changes(git_repo_path, "Added file on master")
         
         # Create a new branch
-        branch_result = git_service_fixture.create_branch(git_repo, "test-branch")
+        branch_result = git_service_fixture.create_branch(git_repo_path, "test-branch")
         assert "Created" in branch_result
         
         # Checkout the new branch
-        checkout_result = git_service_fixture.checkout_branch(git_repo, "test-branch")
+        checkout_result = git_service_fixture.checkout_branch(git_repo_path, "test-branch")
         assert "Switched to branch" in checkout_result
         
         # Create a branch-specific file
-        branch_file = os.path.join(git_repo, "branch_file.txt")
+        branch_file = os.path.join(git_repo_path, "branch_file.txt")
         with open(branch_file, "w", encoding="utf-8") as f:
             f.write("Branch specific file")
         
-        git_service_fixture.add_files(git_repo, ["branch_file.txt"])
-        git_service_fixture.commit_changes(git_repo, "Added file on branch")
+        git_service_fixture.add_files(git_repo_path, ["branch_file.txt"])
+        git_service_fixture.commit_changes(git_repo_path, "Added file on branch")
         
         # Verify status shows we're on the test branch
-        status = git_service_fixture.get_status(git_repo)
+        status = git_service_fixture.get_status(git_repo_path)
         assert status["current_branch"] == "test-branch"
 
-    def test_create_tag(self, git_service_fixture, git_repo):
+    def test_create_tag(self, git_service_fixture, git_repo_path):
         # Test creating a tag
-        tag_result = git_service_fixture.create_tag(git_repo, "v1.0", "Version 1.0")
+        tag_result = git_service_fixture.create_tag(git_repo_path, "v1.0", "Version 1.0")
         assert "Created tag" in tag_result
         
         # Get tags
-        # Note: Added a bit more thorough test for tag retrieval
-        from git import Repo  # Import inside function to avoid circular imports
-        repo = Repo(git_repo)
+        repo = Repo(git_repo_path)
         tags = list(repo.tags)
         assert len(tags) == 1
         assert str(tags[0]) == "v1.0"
 
     @patch("app.core.git_service.requests")
-    def test_webhook(self, mock_requests, git_service_fixture, temp_dir):
+    def test_webhook(self, mock_requests, git_service_fixture, git_temp_directory):
         # Test webhook functionality
         # Set up a repo
-        repo_path = os.path.join(temp_dir, "webhook_test_repo")
+        repo_path = os.path.join(git_temp_directory, "webhook_test_repo")
         os.makedirs(repo_path)
         
-        from git import Repo  # Import inside function to avoid circular imports
         Repo.init(repo_path)
         
         # Mock webhook response

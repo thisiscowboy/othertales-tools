@@ -1,16 +1,16 @@
-import json
-import os
 import shutil
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+# Only import networkx when used in the test_graph_db_mode function
+# import networkx as nx
 
 from app.core.memory_service import MemoryService
 
 
 @pytest.fixture
-def temp_dir():
+def memory_test_dir():
     # Create a temporary directory for testing
     temp_dir_path = Path("./test_data")
     temp_dir_path.mkdir(exist_ok=True)
@@ -20,9 +20,9 @@ def temp_dir():
 
 
 @pytest.fixture
-def memory_service_fixture(temp_dir):
+def memory_service_fixture(memory_test_dir):
     # Create a memory service with test file
-    memory_file = temp_dir / "test_memory.json"
+    memory_file = memory_test_dir / "test_memory.json"
 
     with patch("app.core.memory_service.get_config") as mock_config:
         mock_config.return_value.use_graph_db = False
@@ -218,15 +218,20 @@ class TestMemoryService:
         assert "Unconnected" not in connection_names
 
     @patch("networkx.DiGraph")
-    def test_graph_db_mode(self, mock_digraph, temp_dir):
+    def test_graph_db_mode(self, mock_digraph):
         # Test when using graph database mode
-        memory_file = Path(temp_dir) / "graph_db_test.json"
+        test_dir = Path("./test_graph_db")
+        test_dir.mkdir(exist_ok=True)
+        try:
+            memory_file = test_dir / "graph_db_test.json"
 
-        with patch("app.core.memory_service.get_config") as mock_config:
-            mock_config.return_value.use_graph_db = True
+            with patch("app.core.memory_service.get_config") as mock_config:
+                mock_config.return_value.use_graph_db = True
 
-            # This should initialize the networkx graph
-            MemoryService(str(memory_file))
+                # This should initialize the networkx graph
+                MemoryService(str(memory_file))
 
-            # Verify DiGraph was created
-            assert mock_digraph.called
+                # Verify DiGraph was created
+                assert mock_digraph.called
+        finally:
+            shutil.rmtree(test_dir)
