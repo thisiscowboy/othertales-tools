@@ -1,19 +1,11 @@
-import re
-import time
-import json
-import random
 import asyncio
 import hashlib
 import logging
+import random
+import time
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Any, Optional, TypeVar, cast, Protocol, TYPE_CHECKING
-from urllib.parse import urljoin, urlparse
-
-# For type checking only
-if TYPE_CHECKING:
-    from bs4 import BeautifulSoup, Tag
-    from playwright.async_api import Page, Browser, BrowserContext, Response
+from typing import List, Dict, Any, Optional
 
 # Third-party imports in try/except for graceful handling
 try:
@@ -38,10 +30,6 @@ from app.core.serper_service import SerperService
 
 logger = logging.getLogger(__name__)
 
-# Define type aliases for improved type checking
-SoupType = TypeVar('SoupType')
-TagType = TypeVar('TagType')
-ResponseType = TypeVar('ResponseType')
 
 class ScraperService:
     """Service for scraping web content and processing HTML pages"""
@@ -115,7 +103,7 @@ class ScraperService:
                 "error": str(e)
             }
 
-    async def _handle_rate_limiting(self, response: Optional["ResponseType"]) -> bool:
+    async def _handle_rate_limiting(self, response: Optional["Response"]) -> bool:
         """Handle rate limiting based on response codes"""
         if response is not None and response.status == 429:  # Too Many Requests
             retry_after = response.headers.get('retry-after')
@@ -198,7 +186,7 @@ class ScraperService:
             for prop in ["og:title", "og:description", "og:image", "og:type", "og:site_name"]:
                 element = soup.find("meta", property=prop)
                 if element is not None:
-                    element_tag = cast("Tag", element)
+                    element_tag = element
                     content_attr = element_tag.get("content")
                     if content_attr:
                         key = prop.rsplit(":", maxsplit=1)[-1]
@@ -212,7 +200,7 @@ class ScraperService:
             if "description" not in metadata:
                 desc = soup.find("meta", attrs={"name": "description"})
                 if desc is not None:
-                    desc_tag = cast("Tag", desc)
+                    desc_tag = desc
                     content_attr = desc_tag.get("content")
                     if content_attr:
                         metadata["description"] = content_attr
@@ -233,7 +221,7 @@ class ScraperService:
             structured_data = []
             for script in soup.find_all("script", type="application/ld+json"):
                 try:
-                    script_tag = cast("Tag", script)
+                    script_tag = script
                     script_string = script_tag.string
                     if script_string:
                         data = json.loads(script_string)
@@ -257,7 +245,7 @@ class ScraperService:
         # Extract HTML links from the content
         soup = BeautifulSoup(content, "html.parser")
         for a_tag in soup.find_all('a', href=True):
-            a_tag_cast = cast("Tag", a_tag)
+            a_tag_cast = a_tag
             href = a_tag_cast.get('href')
             if href:
                 # Handle relative links
@@ -468,7 +456,7 @@ class ScraperService:
             try:
                 next_link = soup.select_one(selector)
                 if next_link:
-                    next_link_tag = cast("Tag", next_link)
+                    next_link_tag = next_link
                     href = next_link_tag.get('href')
                     if href:
                         return urljoin(current_url, str(href))

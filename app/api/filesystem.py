@@ -1,7 +1,6 @@
-from fastapi import APIRouter, Body, HTTPException, Query, Path, File, UploadFile, Form
+from fastapi import APIRouter, Body, HTTPException, File, UploadFile, Form
 from fastapi.responses import PlainTextResponse, FileResponse, Response
-from typing import List, Dict, Any, Optional
-import os
+from typing import List, Dict, Optional
 import logging
 from app.models.filesystem import (
     ReadFileRequest,
