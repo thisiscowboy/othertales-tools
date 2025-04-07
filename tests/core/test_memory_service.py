@@ -8,6 +8,8 @@ import pytest
 
 from app.core.memory_service import MemoryService
 
+# Disable pylint warning for pytest fixtures which are intentionally redefined in test methods
+# pylint: disable=redefined-outer-name
 
 @pytest.fixture
 def memory_test_dir():
@@ -172,8 +174,6 @@ class TestMemoryService:
             {"name": "NodeB", "entity_type": "test"},
             {"name": "NodeC", "entity_type": "test"},
         ]
-        memory_service_fixture.create_entities(entities)
-        
         relations = [
             {"source": "NodeA", "target": "NodeB", "relation_type": "linked"},
             {"source": "NodeA", "target": "NodeC", "relation_type": "linked"},

@@ -1,5 +1,5 @@
 from typing import List, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class Entity(BaseModel):
@@ -17,6 +17,18 @@ class Relation(BaseModel):
     )
     to: str = Field(..., description="The name of the entity where the relation ends")
     relation_type: str = Field(..., description="The type of the relation")
+    
+    @model_validator(mode='before')
+    @classmethod
+    def check_source_target(cls, data):
+        """Allow using source/target instead of from_/to"""
+        if isinstance(data, dict):
+            # Handle source/target naming convention from tests
+            if 'source' in data and 'from' not in data and 'from_' not in data:
+                data['from'] = data.pop('source')
+            if 'target' in data and 'to' not in data:
+                data['to'] = data.pop('target')
+        return data
 
 
 class KnowledgeGraph(BaseModel):
