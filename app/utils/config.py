@@ -1,8 +1,10 @@
 import os
 from typing import Optional, List
 from dotenv import load_dotenv
+from pydantic_settings import BaseSettings
+from pydantic import Field
 
-class Config:
+class Config(BaseSettings):
     # Server settings
     server_host: str = "0.0.0.0"
     server_port: int = 8000
@@ -35,6 +37,15 @@ class Config:
     
     # Memory settings
     use_graph_db: bool = False
+    
+    # Scraper settings
+    scraper_min_delay: float = Field(default=1.0, description="Minimum delay between scraper requests")
+    scraper_max_delay: float = Field(default=3.0, description="Maximum delay between scraper requests")
+    scraper_data_path: str = Field(default="./data/scraper", description="Path to store scraper data")
+    user_agent: str = Field(
+        default="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        description="User agent string for web requests"
+    )
 
 config = Config()
 
