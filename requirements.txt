@@ -11,12 +11,13 @@ pydantic_settings==2.8.1
 pytest==8.3.5
 python-dotenv==1.1.0
 Requests==2.32.3
-sentence_transformers==4.0.1
+sentence_transformers==2.2.2  # A more stable version
 uvicorn==0.34.0
 weasyprint==65.0
 gitpython==3.1.44
 httpx>=0.24.0
-transformers<5.0.0
-torch==2.6.0
+transformers==4.37.1         # Compatible with sentence_transformers
+torch==2.0.1                # Compatible with both
 python-multipart
 markdown
+pymongo

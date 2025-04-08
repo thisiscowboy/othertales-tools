@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
+from pymongo import MongoClient
+import os
 
 
 class ReadFileRequest(BaseModel):
@@ -85,3 +87,25 @@ class FileExistsRequest(BaseModel):
     path: str = Field(..., description="Path to check")
     storage: str = Field("local", description="Storage type (local or s3)")
     bucket: Optional[str] = Field(None, description="S3 bucket name if using S3 storage")
+
+
+class MongoDBStorage:
+    def __init__(self, connection_string=None):
+        conn_str = connection_string or os.getenv("MONGODB_CONNECTION_STRING")
+        self.client = MongoClient(conn_str)
+        self.db = self.client.get_database("othertales_tools")
+        
+        # Create collections
+        self.documents = self.db.documents
+        self.entities = self.db.entities
+        self.relations = self.db.relations
+        
+        # Create indexes
+        self.documents.create_index("title")
+        self.documents.create_index([("vector", "vector")])  # Vector index
+
+
+# MongoDB settings
+mongodb_connection_string: Optional[str] = Field(None, description="MongoDB connection string")
+mongodb_db_name: str = Field("othertales_tools", description="MongoDB database name")
+use_mongodb: bool = Field(False, description="Whether to use MongoDB for storage")
