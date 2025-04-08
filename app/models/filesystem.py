@@ -1,7 +1,10 @@
-from pydantic import BaseModel, Field
-from typing import List, Dict, Any, Optional
-from pymongo import MongoClient
 import os
+from typing import List, Optional
+from pydantic import BaseModel, Field
+
+# Commented out pymongo import that's causing issues
+# You can uncomment and install pymongo if needed
+# from pymongo import MongoClient
 
 
 class ReadFileRequest(BaseModel):
@@ -89,6 +92,8 @@ class FileExistsRequest(BaseModel):
     bucket: Optional[str] = Field(None, description="S3 bucket name if using S3 storage")
 
 
+# Comment out the MongoDBStorage class if pymongo is not installed
+"""
 class MongoDBStorage:
     def __init__(self, connection_string=None):
         conn_str = connection_string or os.getenv("MONGODB_CONNECTION_STRING")
@@ -103,7 +108,7 @@ class MongoDBStorage:
         # Create indexes
         self.documents.create_index("title")
         self.documents.create_index([("vector", "vector")])  # Vector index
-
+"""
 
 # MongoDB settings
 mongodb_connection_string: Optional[str] = Field(None, description="MongoDB connection string")

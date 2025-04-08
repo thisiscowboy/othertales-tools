@@ -1,6 +1,6 @@
-from enum import Enum
-from typing import Dict, Any, Optional, List, Union
-from pydantic import BaseModel, Field, HttpUrl
+from datetime import datetime
+from typing import List, Dict, Optional, Any  # Removed Union
+from pydantic import BaseModel, Field  # Removed HttpUrl
 
 
 class DocumentType(str, Enum):

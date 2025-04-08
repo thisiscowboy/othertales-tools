@@ -1,5 +1,5 @@
 import os
-from typing import List, Optional, Dict, Any
+from typing import Optional, List  # Removed Dict, Any
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
 from pydantic import Field
