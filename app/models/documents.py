@@ -1,14 +1,17 @@
-from datetime import datetime
+from enum import Enum  # Added missing Enum import
 from typing import List, Dict, Optional, Any  # Removed Union
 from pydantic import BaseModel, Field  # Removed HttpUrl
 
 
-class DocumentType(str, Enum):
-    MANUSCRIPT = "manuscript"  # Novels, fiction, etc.
-    DOCUMENTATION = "documentation"  # Research papers, technical docs
-    DATASET = "dataset"  # Structured data for training
-    WEBPAGE = "webpage"  # Scraped web content
-    GENERIC = "generic"  # Other document types
+class DocumentType(Enum):
+    # Assuming these are the enum values based on the context
+    MANUSCRIPT = "manuscript"
+    NOTES = "notes"
+    OUTLINE = "outline"
+    CHARACTER_SHEET = "character_sheet"
+    WORLDBUILDING = "worldbuilding"
+    RESEARCH = "research"
+    GENERIC = "generic"  # Adding the missing GENERIC member
 
 
 class CreateDocumentRequest(BaseModel):

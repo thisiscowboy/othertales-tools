@@ -1,4 +1,5 @@
-import os
+# Import os only if needed for the MongoDB class
+# import os  
 from typing import List, Optional
 from pydantic import BaseModel, Field
 
@@ -93,22 +94,20 @@ class FileExistsRequest(BaseModel):
 
 
 # Comment out the MongoDBStorage class if pymongo is not installed
-"""
-class MongoDBStorage:
-    def __init__(self, connection_string=None):
-        conn_str = connection_string or os.getenv("MONGODB_CONNECTION_STRING")
-        self.client = MongoClient(conn_str)
-        self.db = self.client.get_database("othertales_tools")
-        
-        # Create collections
-        self.documents = self.db.documents
-        self.entities = self.db.entities
-        self.relations = self.db.relations
-        
-        # Create indexes
-        self.documents.create_index("title")
-        self.documents.create_index([("vector", "vector")])  # Vector index
-"""
+# class MongoDBStorage:
+#     def __init__(self, connection_string=None):
+#         conn_str = connection_string or os.getenv("MONGODB_CONNECTION_STRING")
+#         self.client = MongoClient(conn_str)
+#         self.db = self.client.get_database("othertales_tools")
+#         
+#         # Create collections
+#         self.documents = self.db.documents
+#         self.entities = self.db.entities
+#         self.relations = self.db.relations
+#         
+#         # Create indexes
+#         self.documents.create_index("title")
+#         self.documents.create_index([("vector", "vector")])  # Vector index
 
 # MongoDB settings
 mongodb_connection_string: Optional[str] = Field(None, description="MongoDB connection string")
