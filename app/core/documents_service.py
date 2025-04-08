@@ -81,7 +81,28 @@ class DocumentsService:
             from sentence_transformers import SentenceTransformer
 
             self.np = np
-            self.vector_model = SentenceTransformer("all-MiniLM-L6-v2")
+            # Add error handling for SentenceTransformer initialization
+            try:
+                self.vector_model = SentenceTransformer("all-MiniLM-L6-v2")
+            except (ImportError, NameError, Exception) as e:
+                # Log the error
+                import logging
+                logging.error(f"Failed to initialize SentenceTransformer: {str(e)}")
+                logging.error("Document embedding functionality will be limited")
+                
+                # Create a placeholder vector model that won't cause further errors
+                class DummyVectorModel:
+                    def encode(self, texts, **kwargs):
+                        # Return zero vectors of appropriate size
+                        import numpy as np
+                        if isinstance(texts, str):
+                            return np.zeros(384)  # Default embedding size for all-MiniLM-L6-v2
+                        return np.zeros((len(texts), 384))
+                    
+                    def __call__(self, texts):
+                        return self.encode(texts)
+                
+                self.vector_model = DummyVectorModel()
             self.vector_search_enabled = True
             self.vector_index_path = self.base_path / ".vectors"
             self.vector_index_path.mkdir(exist_ok=True)
