@@ -187,3 +187,16 @@ class TestGitAPI:
         assert len(response.json()) == 2
         assert response.json()[0] == "abc123"
         mock_git_service.batch_commit.assert_called_once()
+
+    @patch("app.api.git.git_service")
+    def test_get_repo_non_existent(self, mock_git_service):
+        # Mock the service to raise an exception for non-existent repository
+        mock_git_service._get_repo.side_effect = ValueError("Repository path '/test/repo' does not exist")
+
+        # Send request
+        response = client.post("/git/status", json={"repo_path": "/test/repo"})
+
+        # Verify response
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Repository path '/test/repo' does not exist"
+        mock_git_service._get_repo.assert_called_once()

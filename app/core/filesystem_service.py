@@ -113,6 +113,8 @@ class FilesystemService:
             }
             cache_file = self.cache_dir / cache_key
             try:
+                if not self.cache_dir.exists():
+                    self.cache_dir.mkdir(parents=True, exist_ok=True)
                 with open(cache_file, 'w', encoding='utf-8') as f:
                     f.write(content)
             except Exception as e:
