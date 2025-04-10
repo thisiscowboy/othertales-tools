@@ -190,3 +190,59 @@ class TestFilesystemService:
                 Key="s3_test_file.txt",
                 Body="S3 test content"
             )
+
+    def test_read_file_cached(self, fs_service_fixture, fs_test_dir):
+        # Test reading a file with caching enabled
+        test_path = os.path.join(fs_test_dir, "test_file.txt")
+        content = "Test content"
+
+        # Write file
+        fs_service_fixture.write_file(test_path, content)
+
+        # Enable caching
+        fs_service_fixture.cache_enabled = True
+
+        # Read file with caching
+        read_content = fs_service_fixture.read_file_cached(test_path)
+        assert read_content == content
+
+        # Verify cache directory exists
+        assert fs_service_fixture.cache_dir.exists()
+
+        # Verify cache file exists
+        cache_key = fs_service_fixture._cache_key(test_path)
+        cache_file = fs_service_fixture.cache_dir / cache_key
+        assert cache_file.exists()
+
+        # Read file again to ensure cache is used
+        with patch.object(fs_service_fixture, 'read_file', wraps=fs_service_fixture.read_file) as mock_read_file:
+            read_content_cached = fs_service_fixture.read_file_cached(test_path)
+            assert read_content_cached == content
+            mock_read_file.assert_not_called()
+
+    def test_read_file_cached_no_cache_dir(self, fs_service_fixture, fs_test_dir):
+        # Test reading a file with caching enabled but cache directory does not exist
+        test_path = os.path.join(fs_test_dir, "test_file.txt")
+        content = "Test content"
+
+        # Write file
+        fs_service_fixture.write_file(test_path, content)
+
+        # Enable caching
+        fs_service_fixture.cache_enabled = True
+
+        # Remove cache directory if it exists
+        if fs_service_fixture.cache_dir.exists():
+            shutil.rmtree(fs_service_fixture.cache_dir)
+
+        # Read file with caching
+        read_content = fs_service_fixture.read_file_cached(test_path)
+        assert read_content == content
+
+        # Verify cache directory is created
+        assert fs_service_fixture.cache_dir.exists()
+
+        # Verify cache file is created
+        cache_key = fs_service_fixture._cache_key(test_path)
+        cache_file = fs_service_fixture.cache_dir / cache_key
+        assert cache_file.exists()

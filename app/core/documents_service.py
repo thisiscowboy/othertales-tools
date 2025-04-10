@@ -597,7 +597,8 @@ class DocumentsService:
 
     def generate_embeddings(self, doc_id: str, content: str) -> None:
         """Generate and store embeddings for a document"""
-        if not self.vector_search_enabled:
+        if not self.vector_search_enabled or not self.vector_model:
+            logger.warning(f"Vector model not initialized for document {doc_id}")
             return
 
         try:

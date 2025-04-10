@@ -171,3 +171,16 @@ class TestFilesystemAPI:
         assert response.status_code == 200
         assert response.json() is True
         mock_fs_service.file_exists.assert_called_once()
+
+    @patch("app.api.filesystem.filesystem_service")
+    def test_file_exists_exception_handling(self, mock_fs_service):
+        # Mock the service to raise an exception
+        mock_fs_service.file_exists.side_effect = Exception("Test exception")
+
+        # Send request
+        response = client.post("/fs/exists", json={"path": "/test/file.txt", "storage": "local"})
+
+        # Verify response
+        assert response.status_code == 500
+        assert response.json()["detail"] == "Test exception"
+        mock_fs_service.file_exists.assert_called_once()

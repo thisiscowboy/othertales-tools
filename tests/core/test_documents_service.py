@@ -243,3 +243,22 @@ class TestDocumentsService:
         assert mock_markdown.markdown.called
         assert mock_weasyprint.called
         assert result == b"PDF content"
+
+    def test_generate_embeddings(self, docs_service_fixture):
+        # Create a document
+        doc = docs_service_fixture.create_document(
+            title="Embedding Test",
+            content="This is a test document for generating embeddings.",
+            document_type=DocumentType.GENERIC,
+        )
+
+        # Generate embeddings
+        docs_service_fixture.generate_embeddings(doc["id"], doc["content_preview"])
+
+        # Verify embeddings were generated and saved
+        embedding_path = Path(docs_service_fixture.vector_index_path) / f"{doc['id']}.npy"
+        assert embedding_path.exists()
+
+        # Load the saved embeddings and verify their shape
+        embeddings = np.load(embedding_path)
+        assert embeddings.shape == (384,)  # Assuming the embedding size is 384
