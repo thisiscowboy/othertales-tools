@@ -19,6 +19,16 @@ from app.core.memory_service import MemoryService
 # Set up logger
 logger = logging.getLogger(__name__)
 
+# Define a constant for web document types - using a string value as a fallback
+# This approach is safer than assuming a specific enum value exists
+WEB_DOCUMENT_TYPE = "web_content"  # Using a string value that should work with DocumentType
+
+# Attempt to log the available DocumentType values at startup to help debugging
+try:
+    logger.info(f"Available DocumentType values: {[t for t in dir(DocumentType) if not t.startswith('_')]}")
+except Exception as e:
+    logger.warning(f"Could not inspect DocumentType values: {e}")
+
 # Define models
 class ScrapeSingleUrlRequest(BaseModel):
     """Request to scrape a single URL"""
@@ -119,7 +129,7 @@ async def scrape_url(request: ScrapeSingleUrlRequest = Body(...)):
             doc = documents_service.create_document(
                 title=result["title"],
                 content=result["content"],
-                document_type=DocumentType.WEBPAGE,
+                document_type=WEB_DOCUMENT_TYPE,  # Using our constant instead of WEBPAGE
                 metadata=result["metadata"],
                 tags=request.document_tags or [],
                 source_url=result["url"],
@@ -151,7 +161,7 @@ async def scrape_multiple_urls(request: UrlList = Body(...)):
                         doc = documents_service.create_document(
                             title=result["title"],
                             content=result["content"],
-                            document_type=DocumentType.WEBPAGE,
+                            document_type=WEB_DOCUMENT_TYPE,  # Using our constant instead of WEBPAGE
                             metadata=result["metadata"],
                             tags=request.document_tags or [],
                             source_url=result["url"],
@@ -203,7 +213,7 @@ async def crawl_website(request: ScrapeCrawlRequest = Body(...)):
                         doc = documents_service.create_document(
                             title=result["title"],
                             content=result["content"],
-                            document_type=DocumentType.WEBPAGE,
+                            document_type=WEB_DOCUMENT_TYPE,  # Using our constant instead of WEBPAGE
                             metadata=result["metadata"],
                             tags=request.document_tags or [],
                             source_url=result["url"],
@@ -249,7 +259,7 @@ async def enhanced_search(request: SerperSearchRequest = Body(...)):
                         doc = documents_service.create_document(
                             title=result["title"],
                             content=result["content"],
-                            document_type=DocumentType.WEBPAGE,
+                            document_type=WEB_DOCUMENT_TYPE,  # Using our constant instead of WEBPAGE
                             metadata=result["metadata"],
                             tags=request.document_tags or [],
                             source_url=result["url"],
@@ -289,7 +299,7 @@ async def scrape_sitemap(request: SitemapScrapeRequest = Body(...)):
                         doc = documents_service.create_document(
                             title=scraped_url["title"],
                             content=scraped_url["content"],
-                            document_type=DocumentType.WEBPAGE,
+                            document_type=WEB_DOCUMENT_TYPE,  # Using our constant instead of WEBPAGE
                             metadata=scraped_url["metadata"],
                             tags=request.document_tags or [],
                             source_url=scraped_url["url"],

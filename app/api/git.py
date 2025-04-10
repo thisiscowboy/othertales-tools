@@ -1,6 +1,4 @@
-import os
-import tempfile
-from typing import List, Optional, Dict, Any, Union
+from typing import List, Optional, Dict, Any
 import git
 from git import Repo
 from fastapi import APIRouter, Body, HTTPException
@@ -116,10 +114,10 @@ class GitService:
         try:
             repo = Repo(repo_path)
             return repo
-        except git.exc.InvalidGitRepositoryError:
-            raise ValueError(f"Invalid Git repository at '{repo_path}'")
+        except git.InvalidGitRepositoryError as exc:
+            raise ValueError(f"Invalid Git repository at '{repo_path}'") from exc
         except Exception as e:
-            raise ValueError(f"Failed to get repository: {str(e)}")
+            raise ValueError(f"Failed to get repository: {str(e)}") from e
 
     def get_status(self, repo_path: str) -> Dict[str, Any]:
         """Get the status of a Git repository"""
@@ -240,15 +238,15 @@ class GitService:
                     parsed_url = repo_url.replace(
                         "https://", f"https://x-access-token:{auth_token}@"
                     )
-                    repo = git.Repo.clone_from(parsed_url, local_path)
+                    git.Repo.clone_from(parsed_url, local_path)
                 else:
                     # For SSH or other protocols, use standard clone
-                    repo = git.Repo.clone_from(repo_url, local_path)
+                    git.Repo.clone_from(repo_url, local_path)
             else:
-                repo = git.Repo.clone_from(repo_url, local_path)
+                git.Repo.clone_from(repo_url, local_path)
             return f"Successfully cloned repository to '{local_path}'"
         except Exception as e:
-            raise ValueError(f"Failed to clone repository: {str(e)}")
+            raise ValueError(f"Failed to clone repository: {str(e)}") from e
 
     def remove_file(self, repo_path: str, file_path: str) -> str:
         """Remove a file from Git"""
@@ -257,7 +255,7 @@ class GitService:
             repo.index.remove([file_path])
             return f"Successfully removed {file_path} from Git"
         except Exception as e:
-            raise ValueError(f"Failed to remove file: {str(e)}")
+            raise ValueError(f"Failed to remove file: {str(e)}") from e
 
     def get_file_content_at_version(self, repo_path: str, file_path: str, version: str) -> str:
         """Get file content at a specific Git version"""
@@ -265,7 +263,7 @@ class GitService:
         try:
             return repo.git.show(f"{version}:{file_path}")
         except Exception as e:
-            raise ValueError(f"Failed to get file content at version {version}: {str(e)}")
+            raise ValueError(f"Failed to get file content at version {version}: {str(e)}") from e
 
     def setup_lfs(self, repo_path: str, file_patterns: List[str]) -> str:
         """Configure Git LFS for the repository"""
@@ -295,7 +293,7 @@ class GitService:
             commit_hashes.append(commit.hexsha)
         return commit_hashes
 
-    def pull(self, repo_path: str, remote: str = "origin", branch: str = None) -> str:
+    def pull(self, repo_path: str, remote: str = "origin", branch: Optional[str] = None) -> str:
         """Pull changes from remote repository"""
         repo = self._get_repo(repo_path)
         try:
@@ -305,7 +303,7 @@ class GitService:
                 result = repo.git.pull(remote)
             return result
         except Exception as e:
-            raise ValueError(f"Failed to pull changes: {str(e)}")
+            raise ValueError(f"Failed to pull changes: {str(e)}") from e
 
     def fetch(self, repo_path: str, remote: str = "origin", all_remotes: bool = False) -> str:
         """Fetch changes from remote repository"""
@@ -317,10 +315,10 @@ class GitService:
                 result = repo.git.fetch(remote)
             return result
         except Exception as e:
-            raise ValueError(f"Failed to fetch changes: {str(e)}")
+            raise ValueError(f"Failed to fetch changes: {str(e)}") from e
 
     def create_tag(
-        self, repo_path: str, tag_name: str, message: str = None, commit: str = "HEAD"
+        self, repo_path: str, tag_name: str, message: Optional[str] = None, commit: str = "HEAD"
     ) -> str:
         """Create a new Git tag"""
         repo = self._get_repo(repo_path)
@@ -331,7 +329,7 @@ class GitService:
                 repo.create_tag(tag_name, ref=commit)
             return f"Created tag '{tag_name}'"
         except Exception as e:
-            raise ValueError(f"Failed to create tag: {str(e)}")
+            raise ValueError(f"Failed to create tag: {str(e)}") from e
 
     def list_tags(self, repo_path: str) -> List[Dict[str, str]]:
         """List all tags in the repository"""
@@ -348,7 +346,7 @@ class GitService:
                 )
             return tags
         except Exception as e:
-            raise ValueError(f"Failed to list tags: {str(e)}")
+            raise ValueError(f"Failed to list tags: {str(e)}") from e
 
 
 git_service = GitService()
@@ -368,9 +366,9 @@ async def get_status(request: GitStatusRequest = Body(...)):
     try:
         return git_service.get_status(request.repo_path)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get status: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get status: {str(e)}") from e
 
 
 @router.post(
@@ -598,9 +596,9 @@ async def pull_changes(request: GitPullRequest = Body(...)):
     try:
         return git_service.pull(request.repo_path, request.remote, request.branch)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to pull changes: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to pull changes: {str(e)}") from e
 
 
 @router.post(
@@ -638,9 +636,9 @@ async def create_tag(request: GitCreateTagRequest = Body(...)):
             request.repo_path, request.tag_name, request.message, request.commit
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create tag: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to create tag: {str(e)}") from e
 
 
 @router.post(

@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Body, HTTPException, File, UploadFile, Form
-from fastapi.responses import PlainTextResponse, FileResponse, Response
-from typing import List, Dict, Optional
+import os
 import logging
+from typing import Optional
+from fastapi import APIRouter, Body, HTTPException, File, UploadFile, Form
+from fastapi.responses import PlainTextResponse, Response
 from app.models.filesystem import (
     ReadFileRequest,
     WriteFileRequest,
@@ -42,13 +43,13 @@ async def read_file(request: ReadFileRequest = Body(...)):
         return filesystem_service.read_file(request.path, request.storage, request.bucket)
     except ValueError as e:
         logger.warning(f"Access denied: {e}")
-        raise HTTPException(status_code=403, detail=str(e))
-    except FileNotFoundError:
+        raise HTTPException(status_code=403, detail=str(e)) from e
+    except FileNotFoundError as exc:
         logger.warning(f"File not found: {request.path}")
-        raise HTTPException(status_code=404, detail=f"File not found: {request.path}")
+        raise HTTPException(status_code=404, detail=f"File not found: {request.path}") from exc
     except Exception as e:
         logger.error(f"Error reading file: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post(
@@ -74,10 +75,10 @@ async def write_file(request: WriteFileRequest = Body(...)):
         return result
     except ValueError as e:
         logger.warning(f"Access denied: {e}")
-        raise HTTPException(status_code=403, detail=str(e))
+        raise HTTPException(status_code=403, detail=str(e)) from e
     except Exception as e:
         logger.error(f"Error writing file: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post(
@@ -93,12 +94,12 @@ async def list_directory(request: ListDirectoryRequest = Body(...)):
     """
     try:
         return filesystem_service.list_directory(
-            request.path, request.storage, request.bucket, request.recursive
+            request.path, request.storage, request.bucket
         )
     except ValueError as e:
-        raise HTTPException(status_code=403, detail=str(e))
+        raise HTTPException(status_code=403, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.post(
@@ -111,13 +112,13 @@ async def search_files(request: SearchFilesRequest = Body(...)):
     """
     try:
         results = filesystem_service.search_files(
-            request.path, request.pattern, request.storage, request.bucket, request.exclude_patterns
+            request.path, request.pattern, request.storage, request.bucket
         )
         return {"matches": results or ["No matches found"]}
     except ValueError as e:
-        raise HTTPException(status_code=403, detail=str(e))
+        raise HTTPException(status_code=403, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.post(
@@ -134,9 +135,9 @@ async def create_directory(request: CreateDirectoryRequest = Body(...)):
     try:
         return filesystem_service.create_directory(request.path, request.storage, request.bucket)
     except ValueError as e:
-        raise HTTPException(status_code=403, detail=str(e))
+        raise HTTPException(status_code=403, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.post(
@@ -153,9 +154,9 @@ async def delete_file(request: DeleteFileRequest = Body(...)):
     try:
         return filesystem_service.delete_file(request.path, request.storage, request.bucket)
     except ValueError as e:
-        raise HTTPException(status_code=403, detail=str(e))
+        raise HTTPException(status_code=403, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.post(
@@ -182,13 +183,13 @@ async def read_binary_file(request: ReadFileRequest = Body(...)):
         )
     except ValueError as e:
         logger.warning(f"Access denied: {e}")
-        raise HTTPException(status_code=403, detail=str(e))
-    except FileNotFoundError:
+        raise HTTPException(status_code=403, detail=str(e)) from e
+    except FileNotFoundError as exc:
         logger.warning(f"File not found: {request.path}")
-        raise HTTPException(status_code=404, detail=f"File not found: {request.path}")
+        raise HTTPException(status_code=404, detail=f"File not found: {request.path}") from exc
     except Exception as e:
         logger.error(f"Error reading binary file: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post(
@@ -209,21 +210,26 @@ async def upload_file(
     """
     try:
         content = await file.read()
+        # Ensure path and filename are not None
+        if not file.filename:
+            raise ValueError("Uploaded file has no filename")
+        
+        file_path = os.path.join(path or "", file.filename)
         result = filesystem_service.write_file_binary(
-            os.path.join(path, file.filename), content, storage, bucket
+            file_path, content, storage, bucket
         )
         # Invalidate cache if caching is enabled
         try:
-            filesystem_service.invalidate_cache(os.path.join(path, file.filename), storage, bucket)
+            filesystem_service.invalidate_cache(file_path, storage, bucket)
         except Exception as cache_error:
             logger.warning(f"Failed to invalidate cache: {cache_error}")
         return result
     except ValueError as e:
         logger.warning(f"Access denied: {e}")
-        raise HTTPException(status_code=403, detail=str(e))
+        raise HTTPException(status_code=403, detail=str(e)) from e
     except Exception as e:
         logger.error(f"Error uploading file: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post(
@@ -253,17 +259,17 @@ async def file_exists(request: FileExistsRequest = Body(...)):
             try:
                 filesystem_service.s3_client.head_object(Bucket=request.bucket, Key=request.path)
                 exists = True
-            except:
+            except Exception:  # Fixed: Changed bare except to Exception
                 exists = False
         else:
             raise ValueError(f"Unsupported storage type: {request.storage}")
         return {"exists": exists, "path": request.path}
     except ValueError as e:
         logger.warning(f"Invalid request: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.error(f"Error checking file existence: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post(
@@ -286,4 +292,4 @@ async def invalidate_cache(request: InvalidateCacheRequest = Body(...)):
             return "Successfully invalidated all cache entries"
     except Exception as e:
         logger.error(f"Error invalidating cache: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
