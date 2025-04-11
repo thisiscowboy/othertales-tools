@@ -46,6 +46,9 @@ class DocumentsService:
 
         self.repo_path = str(self.base_path)
         self.git_service = GitService()
+        
+        # Initialize memory service for document-entity relationships
+        self.memory_service = MemoryService()
 
         for doc_type in DocumentType:
             (self.base_path / doc_type.value).mkdir(exist_ok=True)

@@ -11,7 +11,8 @@ class DocumentType(Enum):
     CHARACTER_SHEET = "character_sheet"
     WORLDBUILDING = "worldbuilding"
     RESEARCH = "research"
-    GENERIC = "generic"  # Adding the missing GENERIC member
+    GENERIC = "generic"
+    WEBPAGE = "webpage"  # Adding WEBPAGE for web content
 
 
 class CreateDocumentRequest(BaseModel):

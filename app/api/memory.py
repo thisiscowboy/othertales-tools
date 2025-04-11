@@ -19,15 +19,37 @@ from app.core.memory_service import MemoryService
 # Set up logger
 logger = logging.getLogger(__name__)
 
-# Define a constant for web document types - using a string value as a fallback
-# This approach is safer than assuming a specific enum value exists
-WEB_DOCUMENT_TYPE = "web_content"  # Using a string value that should work with DocumentType
-
-# Attempt to log the available DocumentType values at startup to help debugging
+# Document type handling - look for appropriate enum values
 try:
-    logger.info(f"Available DocumentType values: {[t for t in dir(DocumentType) if not t.startswith('_')]}")
+    # Try common enum values that might exist in DocumentType
+    if hasattr(DocumentType, "WEBPAGE"):
+        WEB_DOCUMENT_TYPE = DocumentType.WEBPAGE
+    elif hasattr(DocumentType, "WEB"):
+        WEB_DOCUMENT_TYPE = DocumentType.WEB
+    elif hasattr(DocumentType, "HTML"):
+        WEB_DOCUMENT_TYPE = DocumentType.HTML
+    elif hasattr(DocumentType, "ARTICLE"):
+        WEB_DOCUMENT_TYPE = DocumentType.ARTICLE
+    elif hasattr(DocumentType, "TEXT"):
+        WEB_DOCUMENT_TYPE = DocumentType.TEXT
+    else:
+        # Default to the first enum value as fallback (assuming it's an Enum)
+        enum_values = [getattr(DocumentType, name) for name in dir(DocumentType) 
+                      if not name.startswith('_') and not callable(getattr(DocumentType, name))]
+        if enum_values:
+            WEB_DOCUMENT_TYPE = enum_values[0]
+            logger.warning(f"Using fallback document type: {WEB_DOCUMENT_TYPE}")
+        else:
+            # If we can't determine the enum values, this will fail later
+            logger.error("Could not find suitable DocumentType for web content")
+            WEB_DOCUMENT_TYPE = None
+    
+    # Log what we found
+    logger.info(f"Using document type for web content: {WEB_DOCUMENT_TYPE}")
+    
 except Exception as e:
-    logger.warning(f"Could not inspect DocumentType values: {e}")
+    logger.error(f"Error setting up document type for web content: {e}")
+    WEB_DOCUMENT_TYPE = None
 
 # Define models
 class ScrapeSingleUrlRequest(BaseModel):

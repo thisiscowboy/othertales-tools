@@ -1,11 +1,14 @@
 import asyncio
 import hashlib
+import json
 import logging
 import random
+import re
 import time
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional
+from urllib.parse import urlparse, urljoin
 
 # Third-party imports in try/except for graceful handling
 try:
@@ -148,7 +151,7 @@ class ScraperService:
                 html_content = await page.content()
                 title = await page.title()
                 
-                markdown_content = html_to_markdown(html_content, url, title)
+                markdown_content = html_to_markdown(html_content)
                 metadata = self._extract_metadata(html_content, url)
                 links = self._extract_links(url, html_content)
                 
@@ -562,9 +565,95 @@ class ScraperService:
         Returns:
             Dictionary with crawling results
         """
-        # Use existing code but with Serper enhancements when appropriate
-        # ...implementation would remain largely the same...
-        pass
+        # Initialize variables to track progress and results
+        visited_urls = set()
+        to_visit = [(start_url, 0)]  # (url, depth)
+        results = []
+        success_count = 0
+        failed_count = 0
+        
+        # Extract domain from start_url if allowed_domains is not provided
+        if not allowed_domains:
+            parsed_url = urlparse(start_url)
+            allowed_domains = [parsed_url.netloc]
+        
+        # Initialize browser for crawling
+        browser = await self.get_browser()
+        context = await browser.new_context(
+            user_agent=self.user_agent
+        )
+        
+        try:
+            while to_visit and len(visited_urls) < max_pages:
+                current_url, depth = to_visit.pop(0)
+                
+                # Skip if already visited
+                if current_url in visited_urls:
+                    continue
+                
+                # Add to visited set
+                visited_urls.add(current_url)
+                
+                try:
+                    logger.info(f"Crawling {current_url} (depth {depth})")
+                    
+                    # Add delay between requests
+                    await asyncio.sleep(random.uniform(self.min_delay, self.max_delay))
+                    
+                    # Scrape the current URL
+                    result = await self.scrape_url(current_url)
+                    
+                    if result["success"]:
+                        success_count += 1
+                        results.append(result)
+                        
+                        # If we haven't reached max depth, add links to visit
+                        if depth < recursion_depth:
+                            links = result.get("links", [])
+                            
+                            for link in links:
+                                # Skip if already visited or queued
+                                if link in visited_urls or any(link == url for url, _ in to_visit):
+                                    continue
+                                
+                                # Check if link is from an allowed domain
+                                parsed_link = urlparse(link)
+                                if parsed_link.netloc in allowed_domains:
+                                    to_visit.append((link, depth + 1))
+                    else:
+                        failed_count += 1
+                        
+                except Exception as e:
+                    logger.error(f"Error crawling {current_url}: {e}")
+                    failed_count += 1
+            
+            # Perform verification pass if requested
+            verification_results = None
+            verification_success_rate = None
+            if verification_pass and results:
+                urls_to_verify = [result["url"] for result in results]
+                verification_results = await self._perform_verification_pass(urls_to_verify, context)
+                
+                # Calculate verification success rate
+                if verification_results:
+                    verification_success_rate = sum(1 for vr in verification_results if vr["verified"]) / len(verification_results)
+                
+            # Prepare final results
+            final_results = {
+                "pages_crawled": len(visited_urls),
+                "success_count": success_count,
+                "failed_count": failed_count,
+                "results": results
+            }
+            
+            if verification_pass and verification_results:
+                final_results["verification_results"] = verification_results
+                final_results["verification_success_rate"] = verification_success_rate
+                
+            return final_results
+            
+        finally:
+            await context.close()
 
     async def _perform_verification_pass(self, urls: List[str], context: Any) -> List[Dict[str, Any]]:
         """Verification pass to check content stability"""

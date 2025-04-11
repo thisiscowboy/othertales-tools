@@ -1,6 +1,8 @@
 import json
 import os
 import threading
+import time
+import difflib
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 import logging
@@ -551,13 +553,13 @@ class MemoryService:
                         outgoing.append({
                             'entity': relation['to'],
                             'relation_type': relation['relation_type'],
-                            'properties': relation['properties']
+                            'properties': relation.get('properties', {})
                         })
                     elif relation['to'] == entity_name:
                         incoming.append({
                             'entity': relation['from'],
                             'relation_type': relation['relation_type'],
-                            'properties': relation['properties']
+                            'properties': relation.get('properties', {})
                         })
             
             return {

@@ -114,7 +114,9 @@ async def search_files(request: SearchFilesRequest = Body(...)):
         results = filesystem_service.search_files(
             request.path, request.pattern, request.storage, request.bucket
         )
-        return {"matches": results or ["No matches found"]}
+        # Extract paths from the results for API compatibility
+        paths = [result["path"] for result in results]
+        return {"matches": paths or ["No matches found"]}
     except ValueError as e:
         raise HTTPException(status_code=403, detail=str(e)) from e
     except Exception as e:

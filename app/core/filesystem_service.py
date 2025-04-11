@@ -62,11 +62,16 @@ class FilesystemService:
     def normalize_path(self, requested_path: str) -> pathlib.Path:
         if not requested_path:
             raise ValueError("Empty path not allowed")
+            
+        # Resolve the path to handle symlinks
         requested = pathlib.Path(os.path.expanduser(requested_path)).resolve()
         
+        # Check if the resolved path is within the allowed directories
         for allowed in self.allowed_directories:
-            if str(requested).startswith(allowed):
+            allowed_path = pathlib.Path(allowed).resolve()
+            if str(requested).startswith(str(allowed_path)):
                 return requested
+                
         raise ValueError(f"Access denied: {requested} is outside allowed directories.")
 
     def _cache_key(self, path: str, storage: str = "local", bucket: Optional[str] = None) -> str:
@@ -213,7 +218,7 @@ class FilesystemService:
         else:
             raise ValueError(f"Unsupported storage type: {storage}")
 
-    def search_files(self, directory: str, pattern: str, storage: str = "local", bucket: Optional[str] = None) -> List[str]:
+    def search_files(self, directory: str, pattern: str, storage: str = "local", bucket: Optional[str] = None) -> List[Dict[str, Any]]:
         if storage == "local":
             dir_path = self.normalize_path(directory)
             if not dir_path.exists() or not dir_path.is_dir():
@@ -222,7 +227,14 @@ class FilesystemService:
             matches = []
             for root, _, _ in os.walk(dir_path):
                 for file in glob.glob(os.path.join(root, pattern)):
-                    matches.append(file)
+                    file_path = pathlib.Path(file)
+                    stat = file_path.stat()
+                    matches.append({
+                        "path": file,
+                        "name": file_path.name,
+                        "size": stat.st_size,
+                        "modified": str(stat.st_mtime)
+                    })
             return matches
         elif storage == "s3":
             if not bucket:
@@ -239,7 +251,12 @@ class FilesystemService:
                 for obj in response['Contents']:
                     key = obj['Key']
                     if fnmatch.fnmatch(os.path.basename(key), pattern):
-                        matches.append(key)
+                        matches.append({
+                            "path": key,
+                            "name": os.path.basename(key),
+                            "size": obj['Size'],
+                            "modified": str(obj['LastModified'].timestamp() if hasattr(obj['LastModified'], 'timestamp') else 0)
+                        })
             return matches
         else:
             raise ValueError(f"Unsupported storage type: {storage}")
@@ -256,17 +273,21 @@ class FilesystemService:
             for item in dir_path.iterdir():
                 item_type = "directory" if item.is_dir() else "file"
                 size = 0
+                last_modified = item.stat().st_mtime
                 if item.is_file():
                     size = item.stat().st_size
                 items.append({
                     "name": item.name,
+                    "path": str(item.relative_to(dir_path)),
                     "type": item_type,
                     "size": size,
-                    "modified": item.stat().st_mtime
+                    "last_modified": last_modified,
+                    "modified": str(last_modified)  # For backward compatibility
                 })
             
             return {
                 "path": str(dir_path),
+                "directory": str(dir_path),  # For backward compatibility
                 "items": items
             }
         elif storage == "s3":
@@ -287,9 +308,11 @@ class FilesystemService:
                     name = os.path.basename(prefix_name.rstrip('/'))
                     items.append({
                         "name": name,
+                        "path": name,
                         "type": "directory",
                         "size": 0,
-                        "modified": 0
+                        "last_modified": 0,
+                        "modified": "0"
                     })
             
             # Add files (Contents)
@@ -300,15 +323,19 @@ class FilesystemService:
                     if key == prefix or key.endswith('/'):
                         continue
                     name = os.path.basename(key)
+                    last_modified = obj['LastModified'].timestamp() if hasattr(obj['LastModified'], 'timestamp') else 0
                     items.append({
                         "name": name,
+                        "path": name,
                         "type": "file",
                         "size": obj['Size'],
-                        "modified": obj['LastModified'].timestamp() if hasattr(obj['LastModified'], 'timestamp') else 0
+                        "last_modified": last_modified,
+                        "modified": str(last_modified)
                     })
             
             return {
                 "path": f"s3://{bucket}/{directory}",
+                "directory": f"s3://{bucket}/{directory}",
                 "items": items
             }
         else:
