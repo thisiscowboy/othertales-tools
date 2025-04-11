@@ -55,8 +55,8 @@ class TestGitService:
         
         # Verify result
         assert "current_branch" in result
-        assert "is_clean" in result
-        assert result["is_clean"] is True  # Repository should be clean after initialization
+        assert "clean" in result
+        assert result["clean"] is True  # Repository should be clean after initialization
 
     def test_add_and_commit(self, git_service_fixture, git_repo_path):
         # Test adding and committing changes
@@ -67,15 +67,15 @@ class TestGitService:
         
         # Add the file
         add_result = git_service_fixture.add_files(git_repo_path, ["new_file.txt"])
-        assert "Staged files" in add_result
+        assert "Files staged successfully" in add_result
         
         # Commit the changes
         commit_result = git_service_fixture.commit_changes(git_repo_path, "Added new file")
-        assert "Committed" in commit_result
+        assert "Committed changes with hash" in commit_result
         
         # Verify repository status
         status = git_service_fixture.get_status(git_repo_path)
-        assert status["is_clean"] is True  # Repository should be clean after commit
+        assert status["clean"] is True  # Repository should be clean after commit
 
     def test_get_log(self, git_service_fixture, git_repo_path):
         # Test getting commit log
@@ -105,7 +105,7 @@ class TestGitService:
         
         # Create a new branch
         branch_result = git_service_fixture.create_branch(git_repo_path, "test-branch")
-        assert "Created" in branch_result
+        assert "Created branch" in branch_result
         
         # Checkout the new branch
         checkout_result = git_service_fixture.checkout_branch(git_repo_path, "test-branch")
@@ -161,3 +161,32 @@ class TestGitService:
 
         # Verify that the request was made
         mock_requests.post.assert_called()
+
+    def test_get_status_no_active_branch(self, git_service_fixture, git_temp_directory):
+        # Test getting repository status when there is no active branch
+        repo_path = os.path.join(git_temp_directory, "no_branch_repo")
+        os.makedirs(repo_path)
+        
+        repo = Repo.init(repo_path)
+        
+        # Create a new file and commit it
+        new_file = os.path.join(repo_path, "new_file.txt")
+        with open(new_file, "w", encoding="utf-8") as f:
+            f.write("New file content")
+        
+        repo.git.add("new_file.txt")
+        repo.git.config("user.email", "test@example.com")
+        repo.git.config("user.name", "Test User")
+        repo.git.commit("-m", "Initial commit")
+        
+        # Detach HEAD to simulate no active branch
+        repo.git.checkout("HEAD~1")
+        
+        # Get status
+        result = git_service_fixture.get_status(repo_path)
+        
+        # Verify result
+        assert "current_branch" in result
+        assert result["current_branch"] is None
+        assert "clean" in result
+        assert result["clean"] is True  # Repository should be clean after commit

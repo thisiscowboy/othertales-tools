@@ -68,8 +68,8 @@ class GitService:
             repo = self._get_repo(repo_path)
             
             status = {
-                "branch": repo.active_branch.name,  # This field is needed for tests
-                "current_branch": repo.active_branch.name,
+                "branch": repo.active_branch.name if repo.head.is_valid() else None,  # Handle case where there is no active branch
+                "current_branch": repo.active_branch.name if repo.head.is_valid() else None,
                 "clean": not repo.is_dirty(),
                 "staged_files": [],
                 "unstaged_files": [],
