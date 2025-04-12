@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 import os
 import io
 import hashlib
@@ -131,6 +130,8 @@ class DocumentsService:
         tags: List[str] = None,
         source_url: Optional[str] = None,
         storage_type: str = "local",
+        enable_vector_embedding: bool = True,
+        link_to_knowledge_graph: bool = True,
     ) -> Dict[str, Any]:
         """Create a new document with Git versioning"""
         doc_id = f"doc_{int(time.time())}_{uuid.uuid4().hex[:8]}"
@@ -179,11 +180,31 @@ class DocumentsService:
         self.git_service.add_files(self.repo_path, [str(rel_path)])
         self.git_service.commit_changes(self.repo_path, f"Created document: {title}")
 
-        self._update_memory_graph(doc_id, title, document_type.value, tags, metadata, source_url)
+        # Link to knowledge graph if requested
+        knowledge_graph_linked = False
+        if link_to_knowledge_graph:
+            try:
+                self._update_memory_graph(doc_id, title, document_type.value, tags, metadata, source_url)
+                knowledge_graph_linked = True
+            except Exception as e:
+                logger.warning(f"Failed to link document to knowledge graph: {e}")
 
-        self.generate_embeddings(doc_id, content)
+        # Generate vector embeddings if requested
+        vector_embedding = False
+        if enable_vector_embedding and self.vector_search_enabled:
+            try:
+                self.generate_embeddings(doc_id, content)
+                vector_embedding = True
+            except Exception as e:
+                logger.warning(f"Failed to generate vector embeddings: {e}")
 
-        return self.get_document(doc_id)
+        # Get document and add additional metadata
+        doc = self.get_document(doc_id)
+        if doc:
+            doc["knowledge_graph_linked"] = knowledge_graph_linked
+            doc["vector_embedding"] = vector_embedding
+        
+        return doc
 
     def update_document(
         self,
@@ -634,7 +655,17 @@ class DocumentsService:
             results.sort(key=lambda x: x[1], reverse=True)
             top_results = results[:limit]
 
-            return [self.get_document(doc_id) for doc_id, _ in top_results]
+            # Get documents with similarity scores
+            documents = []
+            for doc_id, similarity in top_results:
+                doc = self.get_document(doc_id)
+                if doc:
+                    # Add similarity score to document metadata
+                    doc["metadata"] = doc.get("metadata", {})
+                    doc["metadata"]["similarity_score"] = round(similarity, 4)
+                    documents.append(doc)
+                    
+            return documents
         except Exception as e:
             logger.error(f"Error during semantic search: {str(e)}")
             return []
@@ -709,35 +740,6 @@ class DocumentsService:
         except Exception as e:
             logger.error(f"Error getting document diff: {e}", exc_info=True)
             raise ValueError(f"Error getting document diff: {e}")
-=======
-import os
-import io
-import hashlib
-import json
-import tempfile
-import time
-import threading
-import random
-import uuid
-import re
-import logging
-from pathlib import Path
-from typing import List, Dict, Any, Optional, Union, Set, Tuple
-from fastapi import HTTPException
-from git import Repo
-from pydantic import BaseModel, Field
-from app.models.documents import (
-    DocumentType,
-    CreateDocumentRequest,
-    UpdateDocumentRequest,
-    DocumentResponse,
-    DocumentVersionResponse,
-    DocumentContentResponse,
-)
-from app.core.filesystem_service import FilesystemService
-from app.core.memory_service import MemoryService
-from app.core.git_service import GitService
-from app.utils.config import get_config
 
 logger = logging.getLogger(__name__)
 
@@ -839,6 +841,8 @@ class DocumentsService:
         tags: List[str] = None,
         source_url: Optional[str] = None,
         storage_type: str = "local",
+        enable_vector_embedding: bool = True,
+        link_to_knowledge_graph: bool = True,
     ) -> Dict[str, Any]:
         """Create a new document with Git versioning"""
         doc_id = f"doc_{int(time.time())}_{uuid.uuid4().hex[:8]}"
@@ -887,11 +891,31 @@ class DocumentsService:
         self.git_service.add_files(self.repo_path, [str(rel_path)])
         self.git_service.commit_changes(self.repo_path, f"Created document: {title}")
 
-        self._update_memory_graph(doc_id, title, document_type.value, tags, metadata, source_url)
+        # Link to knowledge graph if requested
+        knowledge_graph_linked = False
+        if link_to_knowledge_graph:
+            try:
+                self._update_memory_graph(doc_id, title, document_type.value, tags, metadata, source_url)
+                knowledge_graph_linked = True
+            except Exception as e:
+                logger.warning(f"Failed to link document to knowledge graph: {e}")
 
-        self.generate_embeddings(doc_id, content)
+        # Generate vector embeddings if requested
+        vector_embedding = False
+        if enable_vector_embedding and self.vector_search_enabled:
+            try:
+                self.generate_embeddings(doc_id, content)
+                vector_embedding = True
+            except Exception as e:
+                logger.warning(f"Failed to generate vector embeddings: {e}")
 
-        return self.get_document(doc_id)
+        # Get document and add additional metadata
+        doc = self.get_document(doc_id)
+        if doc:
+            doc["knowledge_graph_linked"] = knowledge_graph_linked
+            doc["vector_embedding"] = vector_embedding
+        
+        return doc
 
     def update_document(
         self,
@@ -1343,7 +1367,17 @@ class DocumentsService:
             results.sort(key=lambda x: x[1], reverse=True)
             top_results = results[:limit]
 
-            return [self.get_document(doc_id) for doc_id, _ in top_results]
+            # Get documents with similarity scores
+            documents = []
+            for doc_id, similarity in top_results:
+                doc = self.get_document(doc_id)
+                if doc:
+                    # Add similarity score to document metadata
+                    doc["metadata"] = doc.get("metadata", {})
+                    doc["metadata"]["similarity_score"] = round(similarity, 4)
+                    documents.append(doc)
+                    
+            return documents
         except Exception as e:
             logger.error(f"Error during semantic search: {str(e)}")
             return []
@@ -1418,4 +1452,3 @@ class DocumentsService:
         except Exception as e:
             logger.error(f"Error getting document diff: {e}", exc_info=True)
             raise ValueError(f"Error getting document diff: {e}")
->>>>>>> 78dd76530be545f3983abb28d125f55aa4fab551

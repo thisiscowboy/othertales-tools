@@ -1,533 +1,464 @@
 import logging
-import threading
-import os
 from typing import List, Optional, Dict, Any
-import git
-from git import Repo
-from fastapi import APIRouter, Body, HTTPException
-from pydantic import BaseModel, Field
-from app.utils.config import get_config
+from fastapi import APIRouter, Body, HTTPException, Path, Query
+from app.models.documents import (
+    DocumentType,
+    CreateDocumentRequest,
+    UpdateDocumentRequest,
+    DocumentResponse,
+    DocumentVersionResponse,
+    DocumentContentResponse,
+)
+from app.core.documents_service import DocumentsService
 
 # Set up logger
 logger = logging.getLogger(__name__)
 # Create router
 router = APIRouter()
+# Initialize documents service
+documents_service = DocumentsService()
 
 
-class GitService:
-    def __init__(self):
+@router.post(
+    "/create",
+    response_model=DocumentResponse,
+    summary="Create a new document",
+    description="Create a new document with the specified content and metadata",
+)
+async def create_document(request: CreateDocumentRequest = Body(...)):
+    """Create a new document with the specified content and metadata."""
+    try:
+        # Get global config settings
+        from app.utils.config import get_config
         config = get_config()
-        self.default_username = config.default_git_username
-        self.default_email = config.default_git_email
-        self.temp_auth_files = {}
-        self.repo_locks = {}
+        
+        # Override global settings if explicitly specified in request
+        embedding_enabled = request.embedding_enabled
+        if not config.vector_embedding_enabled:
+            embedding_enabled = False
+            
+        knowledge_graph_linking = request.knowledge_graph_linking
+        if not config.knowledge_graph_auto_link:
+            knowledge_graph_linking = False
+        
+        result = documents_service.create_document(
+            title=request.title,
+            content=request.content,
+            document_type=request.document_type,
+            metadata=request.metadata,
+            tags=request.tags,
+            source_url=request.source_url,
+            storage_type=request.storage_type,
+            # Pass the knowledge graph and embedding flags
+            enable_vector_embedding=embedding_enabled,
+            link_to_knowledge_graph=knowledge_graph_linking
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error creating document: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error creating document: {str(e)}")
 
-    def _get_repo(self, repo_path: str) -> git.Repo:
-        """Get git repository object"""
-        try:
-            repo = Repo(repo_path)
-            return repo
-        except git.InvalidGitRepositoryError as exc:
-            raise ValueError(f"Invalid Git repository at '{repo_path}'") from exc
-        except Exception as e:
-            raise ValueError(f"Failed to get repository: {str(e)}") from e
 
-    def _get_repo_lock(self, repo_path: str) -> threading.Lock:
-        """Get a lock for a specific repository to prevent concurrent modifications"""
-        if repo_path not in self.repo_locks:
-            self.repo_locks[repo_path] = threading.Lock()
-        return self.repo_locks[repo_path]
+@router.post(
+    "/create/manuscript",
+    response_model=DocumentResponse,
+    summary="Create a new manuscript",
+    description="Create a new manuscript (novel, book, story) with chapter structure",
+)
+async def create_manuscript(
+    title: str = Body(..., description="Title of the manuscript"),
+    summary: str = Body(..., description="Summary or synopsis of the manuscript"),
+    structure: List[Dict[str, str]] = Body(..., description="Chapter structure (titles)"),
+    tags: Optional[List[str]] = Body(None, description="Tags for the manuscript"),
+):
+    """Create a new manuscript document with chapter structure."""
+    try:
+        # Create content with chapter structure
+        content = f"# {title}\n\n## Summary\n\n{summary}\n\n## Chapters\n\n"
+        
+        # Add chapter structure
+        for i, chapter in enumerate(structure, 1):
+            chapter_title = chapter.get("title", f"Chapter {i}")
+            chapter_summary = chapter.get("summary", "")
+            content += f"### Chapter {i}: {chapter_title}\n\n"
+            if chapter_summary:
+                content += f"{chapter_summary}\n\n"
+        
+        # Add tags for manuscript if not provided
+        manuscript_tags = tags or []
+        if "manuscript" not in manuscript_tags:
+            manuscript_tags.append("manuscript")
+        
+        # Create the document
+        result = documents_service.create_document(
+            title=title,
+            content=content,
+            document_type=DocumentType.MANUSCRIPT,
+            metadata={"type": "novel", "chapters": len(structure)},
+            tags=manuscript_tags,
+            enable_vector_embedding=True,
+            link_to_knowledge_graph=True
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error creating manuscript: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error creating manuscript: {str(e)}")
 
-    def get_status(self, repo_path: str) -> Dict[str, Any]:
-        """Get the status of a Git repository"""
-        repo = self._get_repo(repo_path)
-        current_branch = repo.active_branch.name
-        staged_files = [item.a_path for item in repo.index.diff("HEAD")]
-        unstaged_files = [item.a_path for item in repo.index.diff(None)]
-        untracked_files = repo.untracked_files
-        return {
-            "clean": not (staged_files or unstaged_files or untracked_files),
-            "current_branch": current_branch,
-            "staged_files": staged_files,
-            "unstaged_files": unstaged_files,
-            "untracked_files": untracked_files,
-        }
 
-    def get_diff(
-        self, repo_path: str, file_path: Optional[str] = None, target: Optional[str] = None
-    ) -> str:
-        """Get diff of changes"""
-        repo = self._get_repo(repo_path)
-        if file_path and target:
-            return repo.git.diff(target, file_path)
-        elif file_path:
-            return repo.git.diff("HEAD", file_path)
-        elif target:
-            return repo.git.diff(target)
-        else:
-            return repo.git.diff()
+@router.get(
+    "/{doc_id}",
+    response_model=DocumentResponse,
+    summary="Get document by ID",
+    description="Get document metadata by ID",
+)
+async def get_document(doc_id: str = Path(..., description="Document ID")):
+    """Get document metadata by ID."""
+    try:
+        result = documents_service.get_document(doc_id)
+        if not result:
+            raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting document: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error getting document: {str(e)}")
 
-    def add_files(self, repo_path: str, files: List[str]) -> str:
-        """Stage files for commit"""
-        with self._get_repo_lock(repo_path):
-            repo = self._get_repo(repo_path)
-            repo.git.add(files)
-            return "Files staged successfully"
 
-    def commit_changes(
-        self,
-        repo_path: str,
-        message: str,
-        author_name: Optional[str] = None,
-        author_email: Optional[str] = None,
-    ) -> str:
-        """Commit staged changes"""
-        with self._get_repo_lock(repo_path):
-            repo = self._get_repo(repo_path)
-            author_name = author_name or self.default_username
-            author_email = author_email or self.default_email
-            with repo.config_writer() as config:
-                config.set_value("user", "name", author_name)
-                config.set_value("user", "email", author_email)
-            commit = repo.index.commit(message)
-            return f"Committed changes with hash {commit.hexsha}"
+@router.get(
+    "/{doc_id}/content",
+    response_model=DocumentContentResponse,
+    summary="Get document content",
+    description="Get full document content by ID",
+)
+async def get_document_content(
+    doc_id: str = Path(..., description="Document ID"),
+    version: Optional[str] = Query(None, description="Optional version to retrieve"),
+):
+    """Get document content by ID, optionally from a specific version."""
+    try:
+        result = documents_service.get_document_content(doc_id, version)
+        if not result:
+            raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting document content: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error getting document content: {str(e)}")
 
-    def reset_changes(self, repo_path: str) -> str:
-        """Reset staged changes"""
-        with self._get_repo_lock(repo_path):
-            repo = self._get_repo(repo_path)
-            repo.git.reset()
-            return "All staged changes reset"
 
-    def get_log(
-        self, repo_path: str, max_count: int = 10, file_path: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
-        """Get log of commits"""
-        repo = self._get_repo(repo_path)
-        if file_path:
-            commits = list(repo.iter_commits(paths=file_path, max_count=max_count))
-        else:
-            commits = list(repo.iter_commits(max_count=max_count))
-        log_data = []
-        for commit in commits:
-            log_data.append(
-                {
-                    "hash": commit.hexsha,
-                    "author": f"{commit.author.name} <{commit.author.email}>",
-                    "date": commit.committed_datetime.strftime("%Y-%m-%d %H:%M:%S %z"),
-                    "message": commit.message.strip(),
-                }
-            )
-        return log_data
+@router.put(
+    "/{doc_id}",
+    response_model=DocumentResponse,
+    summary="Update document",
+    description="Update an existing document",
+)
+async def update_document(
+    doc_id: str = Path(..., description="Document ID"),
+    request: UpdateDocumentRequest = Body(...),
+):
+    """Update an existing document."""
+    try:
+        result = documents_service.update_document(
+            doc_id=doc_id,
+            title=request.title,
+            content=request.content,
+            metadata=request.metadata,
+            tags=request.tags,
+            commit_message=request.commit_message,
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error updating document: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error updating document: {str(e)}")
 
-    def create_branch(
-        self, repo_path: str, branch_name: str, base_branch: Optional[str] = None
-    ) -> str:
-        """Create a new branch"""
-        with self._get_repo_lock(repo_path):
-            repo = self._get_repo(repo_path)
-            if base_branch:
-                repo.git.checkout(base_branch)
-            repo.git.checkout("-b", branch_name)
-            return f"Created branch '{branch_name}'"
 
-    def checkout_branch(self, repo_path: str, branch_name: str, create: bool = False) -> str:
-        """Checkout an existing branch or create a new one"""
-        with self._get_repo_lock(repo_path):
-            repo = self._get_repo(repo_path)
-            if create:
-                if branch_name not in repo.refs:
-                    repo.git.checkout("-b", branch_name)
-                else:
-                    raise ValueError(f"Branch '{branch_name}' already exists")
+@router.put(
+    "/{doc_id}/chapter/{chapter_number}",
+    response_model=DocumentResponse,
+    summary="Update document chapter",
+    description="Update a specific chapter in a manuscript document",
+)
+async def update_chapter(
+    doc_id: str = Path(..., description="Document ID"),
+    chapter_number: int = Path(..., ge=1, description="Chapter number"),
+    title: Optional[str] = Body(None, description="New chapter title"),
+    content: str = Body(..., description="New chapter content"),
+    commit_message: str = Body("Updated chapter", description="Commit message"),
+):
+    """Update a specific chapter in a manuscript document."""
+    try:
+        # First get the document to ensure it exists and is a manuscript
+        doc = documents_service.get_document(doc_id)
+        if not doc:
+            raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
+            
+        if doc.get("document_type") != DocumentType.MANUSCRIPT:
+            raise HTTPException(status_code=400, detail="Document is not a manuscript")
+            
+        # Get full document content
+        doc_content = documents_service.get_document_content(doc_id)
+        if not doc_content:
+            raise HTTPException(status_code=404, detail=f"Document content not found")
+            
+        # Parse the document to find chapters
+        lines = doc_content["content"].split("\n")
+        chapters = []
+        chapter_start_lines = []
+        
+        # Find chapter headings
+        for i, line in enumerate(lines):
+            if line.startswith("### Chapter "):
+                chapters.append(line)
+                chapter_start_lines.append(i)
+        
+        # Check if the requested chapter exists
+        if chapter_number > len(chapters):
+            raise HTTPException(status_code=404, detail=f"Chapter {chapter_number} not found")
+            
+        # Determine the start and end of the chapter
+        chapter_start = chapter_start_lines[chapter_number - 1]
+        chapter_end = chapter_start_lines[chapter_number] if chapter_number < len(chapters) else len(lines)
+        
+        # Update the chapter title if provided
+        if title:
+            chapter_title_parts = chapters[chapter_number - 1].split(":", 1)
+            if len(chapter_title_parts) > 1:
+                lines[chapter_start] = f"{chapter_title_parts[0]}: {title}"
             else:
-                repo.git.checkout(branch_name)
-            return f"Checked out branch '{branch_name}'"
-
-    def clone_repo(self, repo_url: str, local_path: str, auth_token: Optional[str] = None) -> str:
-        """Clone a Git repository"""
-        try:
-            if auth_token:
-                if repo_url.startswith("https://"):
-                    repo_url = repo_url.replace("https://", f"https://x-access-token:{auth_token}@")
-                Repo.clone_from(repo_url, local_path)
-            else:
-                Repo.clone_from(repo_url, local_path)
-            return f"Cloned repository to '{local_path}'"
-        except Exception as e:
-            raise ValueError(f"Failed to clone repository: {str(e)}") from e
-
-    def remove_file(self, repo_path: str, file_path: str) -> str:
-        """Remove a file from the repository"""
-        with self._get_repo_lock(repo_path):
-            repo = self._get_repo(repo_path)
-            try:
-                repo.index.remove([file_path])
-                repo.index.commit(f"Removed {file_path}")
-                return f"Successfully removed {file_path} from Git"
-            except Exception as e:
-                raise ValueError(f"Failed to remove file: {str(e)}") from e
-
-    def get_file_content(self, repo_path: str, file_path: str, version: str) -> str:
-        """Get the content of a file at a specific Git version"""
-        repo = self._get_repo(repo_path)
-        try:
-            blob = repo.git.show(f"{version}:{file_path}")
-            return blob
-        except Exception as e:
-            raise ValueError(f"Failed to get file content at version {version}: {str(e)}") from e
-
-    def configure_lfs(self, repo_path: str, file_patterns: List[str]) -> str:
-        """Configure Git LFS for the repository"""
-        with self._get_repo_lock(repo_path):
-            repo = self._get_repo(repo_path)
-            try:
-                repo.git.execute(["git", "lfs", "install"])
-                for pattern in file_patterns:
-                    repo.git.execute(["git", "lfs", "track", pattern])
-                repo.index.commit("Set up Git LFS tracking")
-                return "Git LFS configured successfully"
-            except Exception as e:
-                raise ValueError(f"Failed to set up Git LFS: {str(e)}") from e
-
-    def batch_commit(
-        self, repo_path: str, file_groups: List[List[str]], message_template: str
-    ) -> List[str]:
-        """Commit files in batches for better performance"""
-        with self._get_repo_lock(repo_path):
-            repo = self._get_repo(repo_path)
-            commit_hashes = []
-            for i, file_group in enumerate(file_groups):
-                repo.git.add(file_group)
-                commit = repo.index.commit(f"{message_template} (batch {i+1}/{len(file_groups)})")
-                commit_hashes.append(commit.hexsha)
-            return commit_hashes
-
-    def pull_changes(
-        self, repo_path: str, remote: str = "origin", branch: Optional[str] = None, all_remotes: bool = False
-    ) -> str:
-        """Pull changes from a remote repository"""
-        with self._get_repo_lock(repo_path):
-            repo = self._get_repo(repo_path)
-            try:
-                if all_remotes:
-                    result = repo.git.fetch(all=True)
-                else:
-                    result = repo.git.pull(remote, branch) if branch else repo.git.pull(remote)
-                return result
-            except Exception as e:
-                raise ValueError(f"Failed to pull changes: {str(e)}") from e
-
-    def create_tag(
-        self, repo_path: str, tag_name: str, message: Optional[str] = None, commit: str = "HEAD"
-    ) -> str:
-        """Create a new Git tag"""
-        with self._get_repo_lock(repo_path):
-            repo = self._get_repo(repo_path)
-            try:
-                if message:
-                    repo.create_tag(tag_name, ref=commit, message=message)
-                else:
-                    repo.create_tag(tag_name, ref=commit)
-                return f"Created tag '{tag_name}'"
-            except Exception as e:
-                raise ValueError(f"Failed to create tag: {str(e)}") from e
-
-    def list_tags(self, repo_path: str) -> List[Dict[str, str]]:
-        """List all tags in the repository"""
-        repo = self._get_repo(repo_path)
-        try:
-            tags = []
-            for tag in repo.tags:
-                tags.append(
-                    {
-                        "name": tag.name,
-                        "commit": tag.commit.hexsha,
-                        "date": tag.commit.committed_datetime.strftime("%Y-%m-%d %H:%M:%S %z"),
-                    }
-                )
-            return tags
-        except Exception as e:
-            raise ValueError(f"Failed to list tags: {str(e)}") from e
-
-    def optimize_repo(self, repo_path: str) -> str:
-        """Optimize the Git repository"""
-        repo = self._get_repo(repo_path)
-        try:
-            repo.git.gc("--aggressive", "--prune=now")
-            return "Repository optimized successfully"
-        except Exception as e:
-            raise ValueError(f"Failed to optimize repository: {str(e)}") from e
-
-    def configure_auth(self, repo_path: str, username: str, password: str) -> str:
-        """Configure authentication for repository operations"""
-        if not username or not password:
-            raise ValueError("Username and password required for HTTPS authentication")
-        with self._get_repo_lock(repo_path):
-            repo = self._get_repo(repo_path)
-            with repo.config_writer() as config:
-                config.set_value("user", "name", username)
-                config.set_value("user", "password", password)
-            return "Authentication configured successfully"
-
-    def register_webhook(self, repo_path: str, webhook: Dict[str, Any]) -> str:
-        """Register a webhook for Git events"""
-        hook_path = os.path.join(repo_path, ".git", "hooks", "post-commit")
-        with open(hook_path, "w", encoding="utf-8") as hook_file:
-            hook_file.write(
-                f"#!/bin/sh\ncurl -X POST {webhook['url']} -d @- <<'EOF'\n$(git log -1 --pretty=format:'%H')\nEOF\n"
-            )
-        os.chmod(hook_path, 0o755)
-        return "Webhook registered successfully"
-
-    def restore_file_version(self, repo_path: str, file_path: str, version: str) -> bool:
-        """Restore a file to a specific version"""
-        try:
-            content = self.get_file_content(repo_path, file_path, version)
-            full_path = os.path.join(repo_path, file_path)
-            os.makedirs(os.path.dirname(full_path), exist_ok=True)
-            with open(full_path, "w", encoding="utf-8") as f:
-                f.write(content)
-            self.add_files(repo_path, [file_path])
-            self.commit_changes(repo_path, f"Restored file to version {version}")
-            return True
-        except Exception as e:
-            logger.error(f"Error restoring file version: {e}", exc_info=True)
-            return False
-
-
-class GitRepoPath(BaseModel):
-    repo_path: str = Field(..., description="Path to the Git repository")
-
-
-class GitCommitRequest(GitRepoPath):
-    files: List[str] = Field(..., description="List of files to add")
-    message: str = Field(..., description="Commit message")
-    author_name: Optional[str] = Field(None, description="Author name")
-    author_email: Optional[str] = Field(None, description="Author email")
-
-
-class GitDiffRequest(GitRepoPath):
-    file_path: Optional[str] = Field(None, description="Path to the file to diff")
-    target: Optional[str] = Field(None, description="Target to diff against")
-
-
-class GitLogRequest(GitRepoPath):
-    max_count: int = Field(10, description="Maximum number of commits to return")
-    file_path: Optional[str] = Field(None, description="Path to the file to get log for")
-
-
-class GitBranchRequest(GitRepoPath):
-    branch_name: str = Field(..., description="Name of the branch to create")
-    base_branch: Optional[str] = Field(
-        None, description="Base branch to create the new branch from"
-    )
-
-
-class GitCheckoutRequest(GitRepoPath):
-    branch_name: str = Field(..., description="Name of the branch to checkout")
-    create: bool = Field(False, description="Create the branch if it doesn't exist")
-
-
-class GitCloneRequest(BaseModel):
-    repo_url: str = Field(..., description="URL of the repository to clone")
-    local_path: str = Field(..., description="Path to clone the repository to")
-    auth_token: Optional[str] = Field(
-        None, description="Authentication token for private repositories"
-    )
-
-
-class GitRemoveFileRequest(GitRepoPath):
-    file_path: str = Field(..., description="Path to the file to remove")
-
-
-class GitFileContentRequest(GitRepoPath):
-    file_path: str = Field(..., description="Path to the file")
-    version: str = Field(..., description="Git version to get the file content from")
-
-
-class GitLFSRequest(GitRepoPath):
-    file_patterns: List[str] = Field(..., description="List of file patterns to track with LFS")
-
-
-class GitBatchCommitRequest(GitRepoPath):
-    file_groups: List[List[str]] = Field(
-        ..., description="List of file groups to commit in batches"
-    )
-    message_template: str = Field(..., description="Template for commit messages")
-
-
-class GitPullRequest(GitRepoPath):
-    remote: str = Field("origin", description="Remote to pull from")
-    branch: Optional[str] = Field(None, description="Branch to pull")
-    all_remotes: bool = Field(False, description="Fetch from all remotes")
-
-
-class GitTagRequest(GitRepoPath):
-    tag_name: str = Field(..., description="Tag name")
-    message: Optional[str] = Field(None, description="Tag message")
-    commit: str = Field("HEAD", description="Commit to tag")
-
-
-class GitTagsResponse(BaseModel):
-    tags: List[Dict[str, str]] = Field(..., description="List of tags")
-
-
-class GitWebhook(BaseModel):
-    url: str = Field(..., description="Webhook URL")
-    events: List[str] = Field(..., description="List of events to trigger the webhook")
-    secret: Optional[str] = Field(None, description="Webhook secret")
-
-
-router = APIRouter()
-git_service = GitService()
-
-
-@router.post(
-    "/status",
-    response_model=Dict[str, Any],
-    summary="Get repository status",
-    description="Get the status of a Git repository, including the current branch, staged changes, and unstaged changes.",
-)
-async def get_status(request: GitRepoPath = Body(...)):
-    """Get the status of a Git repository."""
-    try:
-        return git_service.get_status(request.repo_path)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get status: {str(e)}") from e
-
-
-@router.post(
-    "/diff",
-    response_model=str,
-    summary="Get diff of changes",
-    description="Get the difference between working directory and HEAD or a specified target.",
-)
-async def get_diff(request: GitDiffRequest = Body(...)):
-    """Get the difference between working directory and HEAD or a specified target."""
-    try:
-        return git_service.get_diff(request.repo_path, request.file_path, request.target)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get diff: {str(e)}") from e
-
-
-@router.post(
-    "/add",
-    response_model=str,
-    summary="Stage files for commit",
-    description="Stage files for commit.",
-)
-async def add_files(request: GitCommitRequest = Body(...)):
-    """Stage files for commit."""
-    try:
-        return git_service.add_files(request.repo_path, request.files)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to add files: {str(e)}")
-
-
-@router.post(
-    "/commit",
-    response_model=str,
-    summary="Commit changes",
-    description="Commit staged changes with a commit message. Optionally, specify the author name and email.",
-)
-async def commit_changes(request: GitCommitRequest = Body(...)):
-    """Commit staged changes with a commit message. Optionally, specify the author name and email."""
-    try:
-        return git_service.commit_changes(
-            request.repo_path, request.message, request.author_name, request.author_email
+                lines[chapter_start] = f"{chapters[chapter_number - 1]}: {title}"
+                
+        # Replace chapter content
+        lines[chapter_start + 1:chapter_end] = ["", content, ""]
+        
+        # Rejoin the document
+        updated_content = "\n".join(lines)
+        
+        # Update the document
+        result = documents_service.update_document(
+            doc_id=doc_id,
+            content=updated_content,
+            commit_message=f"{commit_message} - Chapter {chapter_number}",
         )
+        
+        return result
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to commit changes: {str(e)}")
+        logger.error(f"Error updating chapter: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error updating chapter: {str(e)}")
 
 
-@router.post(
-    "/reset",
-    response_model=str,
-    summary="Reset staged changes",
-    description="Reset all staged changes.",
+@router.delete(
+    "/{doc_id}",
+    summary="Delete document",
+    description="Delete a document by ID",
 )
-async def reset_changes(request: GitRepoPath = Body(...)):
-    """Reset all staged changes."""
+async def delete_document(doc_id: str = Path(..., description="Document ID")):
+    """Delete a document by ID."""
     try:
-        return git_service.reset_changes(request.repo_path)
+        success = documents_service.delete_document(doc_id)
+        if not success:
+            raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
+        return {"message": f"Document {doc_id} deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting document: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error deleting document: {str(e)}")
+
+
+@router.get(
+    "/{doc_id}/versions",
+    response_model=List[DocumentVersionResponse],
+    summary="Get document versions",
+    description="Get version history for a document",
+)
+async def get_document_versions(
+    doc_id: str = Path(..., description="Document ID"),
+    max_versions: int = Query(10, description="Maximum number of versions to return"),
+):
+    """Get version history for a document."""
+    try:
+        versions = documents_service.get_document_versions(doc_id, max_versions)
+        return versions
+    except Exception as e:
+        logger.error(f"Error getting document versions: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error getting document versions: {str(e)}")
+
+
+@router.get(
+    "/search",
+    response_model=List[DocumentResponse],
+    summary="Search documents",
+    description="Search documents by query, type, and tags",
+)
+async def search_documents(
+    query: Optional[str] = Query(None, description="Search query"),
+    doc_type: Optional[str] = Query(None, description="Document type"),
+    tags: Optional[List[str]] = Query(None, description="Tags to filter by"),
+    limit: int = Query(10, description="Maximum number of results"),
+):
+    """Search documents by query, type, and tags."""
+    try:
+        results = documents_service.search_documents(query, doc_type, tags, limit)
+        return results
+    except Exception as e:
+        logger.error(f"Error searching documents: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error searching documents: {str(e)}")
+
+
+@router.get(
+    "/{doc_id}/diff",
+    summary="Get document diff",
+    description="Get differences between document versions",
+)
+async def get_document_diff(
+    doc_id: str = Path(..., description="Document ID"),
+    from_version: str = Query(..., description="Base version"),
+    to_version: str = Query("HEAD", description="Target version"),
+):
+    """Get differences between document versions."""
+    try:
+        diff = documents_service.get_document_diff(doc_id, from_version, to_version)
+        return diff
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to reset changes: {str(e)}")
+        logger.error(f"Error getting document diff: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error getting document diff: {str(e)}")
 
 
-@router.post(
-    "/log",
-    response_model=List[Dict[str, Any]],
-    summary="Get commit log",
-    description="Get the commit log of the repository",
+@router.get(
+    "/{doc_id}/export/{format}",
+    summary="Export document",
+    description="Export a document to a different format",
 )
-async def get_log(request: GitLogRequest = Body(...)):
-    """Get the commit log of the repository."""
+async def export_document(
+    doc_id: str = Path(..., description="Document ID"),
+    format: str = Path(..., description="Target format (pdf, docx)"),
+):
+    """Export a document to a different format."""
     try:
-        return git_service.get_log(request.repo_path, request.max_count, request.file_path)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get log: {str(e)}")
-
-
-@router.post(
-    "/branch",
-    response_model=str,
-    summary="Create branch",
-    description="Create a new branch from a base branch.",
-)
-async def create_branch(request: GitBranchRequest = Body(...)):
-    """Create a new branch from a base branch."""
-    try:
-        return git_service.create_branch(
-            request.repo_path, request.branch_name, request.base_branch
+        if format.lower() not in ["pdf", "docx"]:
+            raise HTTPException(status_code=400, detail=f"Unsupported format: {format}")
+        
+        document = documents_service.get_document(doc_id)
+        if not document:
+            raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
+        
+        exported_bytes = documents_service.convert_document_format(doc_id, format.lower())
+        
+        from fastapi.responses import Response
+        content_type = "application/pdf" if format.lower() == "pdf" else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        filename = f"{document['title'].replace(' ', '_')}.{format.lower()}"
+        
+        return Response(
+            content=exported_bytes,
+            media_type=content_type,
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
         )
+    except HTTPException:
+        raise
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create branch: {str(e)}") from e
+        logger.error(f"Error exporting document: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error exporting document: {str(e)}")
 
 
 @router.post(
-    "/checkout",
-    response_model=str,
-    summary="Checkout branch",
-    description="Checkout an existing branch or create a new one.",
+    "/{doc_id}/tag",
+    response_model=DocumentResponse,
+    summary="Add tags to document",
+    description="Add tags to an existing document",
 )
-async def checkout_branch(request: GitCheckoutRequest = Body(...)):
-    """Checkout an existing branch or create a new one."""
+async def add_document_tags(
+    doc_id: str = Path(..., description="Document ID"),
+    tags: List[str] = Body(..., description="Tags to add"),
+):
+    """Add tags to an existing document."""
     try:
-        return git_service.checkout_branch(
-            request.repo_path, request.branch_name, request.create
+        document = documents_service.get_document(doc_id)
+        if not document:
+            raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
+        
+        current_tags = document.get("tags", [])
+        new_tags = list(set(current_tags + tags))
+        
+        result = documents_service.update_document(
+            doc_id=doc_id,
+            tags=new_tags,
+            commit_message="Added tags",
         )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+        return result
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to checkout branch: {str(e)}") from e
+        logger.error(f"Error adding tags: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error adding tags: {str(e)}")
 
 
 @router.post(
-    "/clone",
-    response_model=str,
-    summary="Clone repository",
-    description="Clone a Git repository to a local path.",
+    "/restore-version/{doc_id}",
+    response_model=DocumentResponse,
+    summary="Restore document version",
+    description="Restore a document to a previous version",
 )
-async def clone_repo(request: GitCloneRequest = Body(...)):
-    """Clone a Git repository to a local path."""
+async def restore_document_version(
+    doc_id: str = Path(..., description="Document ID"),
+    version: str = Body(..., description="Version hash to restore"),
+    commit_message: str = Body("Restored previous version", description="Commit message"),
+):
+    """Restore a document to a previous version."""
     try:
-        return git_service.clone_repo(request.repo_url, request.local_path, request.auth_token)
+        # Get the content from the specified version
+        version_content = documents_service.get_document_content(doc_id, version)
+        if not version_content:
+            raise HTTPException(status_code=404, detail=f"Version {version} of document {doc_id} not found")
+        
+        # Update the document with the content from the specified version
+        result = documents_service.update_document(
+            doc_id=doc_id,
+            content=version_content["content"],
+            commit_message=f"{commit_message} - Version {version[:7]}",
+        )
+        
+        return result
+    except HTTPException:
+        raise
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to clone repository: {str(e)}") from e
+        logger.error(f"Error restoring document version: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error restoring document version: {str(e)}")
+
+
+@router.post(
+    "/semantic-search",
+    response_model=List[DocumentResponse],
+    summary="Semantic search",
+    description="Search documents semantically using vector embeddings",
+)
+async def semantic_search(
+    query: str = Body(..., embed=True, description="Search query"),
+    limit: int = Query(5, description="Maximum number of results"),
+):
+    """Search documents semantically using vector embeddings."""
+    try:
+        results = documents_service.semantic_search(query, limit)
+        return results
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error during semantic search: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error during semantic search: {str(e)}")

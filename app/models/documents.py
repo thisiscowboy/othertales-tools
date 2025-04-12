@@ -4,15 +4,36 @@ from pydantic import BaseModel, Field  # Removed HttpUrl
 
 
 class DocumentType(Enum):
-    # Assuming these are the enum values based on the context
-    MANUSCRIPT = "manuscript"
+    # Main document categories
+    MANUSCRIPT = "manuscript"  # Novels, stories, books
+    DOCUMENTATION = "documentation"  # SDK, API, technical docs
+    ACCOUNTANCY = "accountancy"  # Tax, finance, accounting
+    LEGAL = "legal"  # Law, regulation, contracts
+    
+    # Specific document types
     NOTES = "notes"
     OUTLINE = "outline"
     CHARACTER_SHEET = "character_sheet"
     WORLDBUILDING = "worldbuilding"
     RESEARCH = "research"
     GENERIC = "generic"
-    WEBPAGE = "webpage"  # Adding WEBPAGE for web content
+    WEBPAGE = "webpage"  # Web content
+    
+    # SDK/API specific types
+    API_REFERENCE = "api_reference"
+    SDK_GUIDE = "sdk_guide"
+    CODE_EXAMPLE = "code_example"
+    
+    # Tax/Accounting specific types
+    TAX_GUIDE = "tax_guide"
+    ACCOUNTING_STANDARD = "accounting_standard"
+    FINANCIAL_REPORT = "financial_report"
+    
+    # Legal specific types
+    CONTRACT = "contract"
+    REGULATION = "regulation"
+    LEGAL_OPINION = "legal_opinion"
+    CASE_LAW = "case_law"
 
 
 class CreateDocumentRequest(BaseModel):
@@ -25,6 +46,8 @@ class CreateDocumentRequest(BaseModel):
     tags: List[str] = Field(default_factory=list, description="Document tags")
     source_url: Optional[str] = Field(None, description="Source URL if applicable")
     storage_type: str = Field("local", description="Storage type (local or s3)")
+    knowledge_graph_linking: bool = Field(True, description="Whether to automatically link to knowledge graph")
+    embedding_enabled: bool = Field(True, description="Whether to generate vector embeddings for the document")
 
 
 class UpdateDocumentRequest(BaseModel):
@@ -52,6 +75,9 @@ class DocumentResponse(BaseModel):
     version_count: Optional[int] = Field(1, description="Number of versions")
     content_available: bool = Field(..., description="Whether full content is available")
     source_url: Optional[str] = Field(None, description="Source URL if applicable")
+    knowledge_graph_linked: bool = Field(False, description="Whether document is linked to knowledge graph")
+    vector_embedding: bool = Field(False, description="Whether document has vector embeddings")
+    related_entities: Optional[List[Dict[str, Any]]] = Field(None, description="Related entities from knowledge graph")
 
 
 class DocumentVersionResponse(BaseModel):

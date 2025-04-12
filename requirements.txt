@@ -33,4 +33,5 @@ pytest==8.3.5
 weasyprint==65.0
 httpx>=0.24.0
 torch==2.4.1
-markdown
+markdown==3.5.1
+APScheduler==3.10.1

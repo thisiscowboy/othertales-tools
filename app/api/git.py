@@ -579,7 +579,7 @@ async def batch_commit(request: GitBatchCommitRequest = Body(...)):
             request.repo_path, request.file_groups, request.message_template
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail.str(e))
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to batch commit: {str(e)}")
 

@@ -29,14 +29,34 @@ class ScrapeCrawlRequest(BaseModel):
     """Request to crawl a website"""
 
     start_url: str = Field(..., description="Starting URL for crawl")
-    max_pages: int = Field(100, ge=1, description="Maximum number of pages to crawl")
-    recursion_depth: int = Field(1, ge=1, description="How many links deep to follow")
+    max_pages: int = Field(5000, ge=1, le=50000, description="Maximum number of pages to crawl (1-50,000)")
+    recursion_depth: int = Field(10, ge=1, le=50, description="How many links deep to follow (1-50)")
     allowed_domains: Optional[List[str]] = Field(
         None, description="Restrict crawling to these domains"
     )
     create_documents: bool = Field(True, description="Create documents from scraped content")
     document_tags: Optional[List[str]] = Field(None, description="Tags for documents if created")
     verification_pass: bool = Field(False, description="Run verification pass after initial crawl")
+    site_type: Optional[str] = Field(
+        None, 
+        description="Predefined site type (legislation, hmrc, generic)"
+    )
+    follow_subdomains: bool = Field(
+        True, 
+        description="Whether to follow links to subdomains of allowed domains"
+    )
+    content_types: List[str] = Field(
+        default=["text/html"],
+        description="Content types to process (text/html, application/pdf, etc.)"
+    )
+    include_patterns: Optional[List[str]] = Field(
+        None,
+        description="URL patterns to include (regex patterns)"
+    )
+    exclude_patterns: Optional[List[str]] = Field(
+        None,
+        description="URL patterns to exclude (regex patterns)"
+    )
 
 
 class SearchAndScrapeRequest(BaseModel):
@@ -55,6 +75,30 @@ class SitemapScrapeRequest(BaseModel):
     max_urls: int = Field(50, ge=1, description="Maximum number of URLs to scrape")
     create_documents: bool = Field(True, description="Create documents from scraped content")
     document_tags: Optional[List[str]] = Field(None, description="Tags for documents if created")
+
+
+class GitHubRepoRequest(BaseModel):
+    """Request to scrape a GitHub repository"""
+
+    repo_url: str = Field(..., description="URL of the GitHub repository")
+    auth_token: Optional[str] = Field(None, description="GitHub authentication token for private repos")
+    doc_folders: List[str] = Field(
+        default=["docs", "documentation", "doc", "examples", "cookbook", "guide", "guides", "tutorial", "tutorials", "README.md"],
+        description="Folders or files containing documentation to focus on"
+    )
+    file_extensions: List[str] = Field(
+        default=[".md", ".rst", ".txt", ".ipynb", ".py", ".js", ".ts", ".tsx", ".jsx", ".html"],
+        description="File extensions to include in documentation extraction"
+    )
+    exclude_patterns: Optional[List[str]] = Field(
+        None,
+        description="Patterns to exclude (e.g., 'test', 'node_modules')"
+    )
+    create_documents: bool = Field(True, description="Create documents from scraped content")
+    document_tags: Optional[List[str]] = Field(None, description="Tags for documents if created")
+    document_type: str = Field("API_REFERENCE", description="Type of documentation (API_REFERENCE, SDK_GUIDE, CODE_EXAMPLE)")
+    extract_code_examples: bool = Field(True, description="Extract and process code examples")
+    max_files: int = Field(500, ge=1, le=10000, description="Maximum number of files to process")
 
 
 class TableData(BaseModel):
