@@ -74,9 +74,9 @@ class SchedulerService:
             with open(temp_file, 'w', encoding='utf-8') as f:
                 json.dump(jobs_data, f, indent=2)
                 
-            # Ensure the file is written to disk
-            f.flush()
-            os.fsync(f.fileno())
+                # Ensure the file is written to disk (inside the with block)
+                f.flush()
+                os.fsync(f.fileno())
             
             # Rename for atomic replace (works on both Windows and Unix)
             if os.path.exists(self.jobs_file):
