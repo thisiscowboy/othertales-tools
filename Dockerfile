@@ -18,11 +18,8 @@ RUN pip install --no-cache-dir playwright==1.51.0 && \
     playwright install-deps chromium
 
 # Copy requirements first for better caching
-COPY requirements-docker.txt . 
-RUN pip install --no-cache-dir -r requirements-docker.txt
-
-# Install vector embedding dependencies (sentence-transformers and transformers)
-RUN pip install --no-cache-dir sentence-transformers==2.2.2 transformers==4.37.1 torch==2.0.1
+COPY requirements.txt . 
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the rest of the application
 COPY . .
