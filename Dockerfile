@@ -22,10 +22,10 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Explicitly install vector search dependencies
-RUN pip install --no-cache-dir numpy==2.2.4 torch==2.4.1 sentence-transformers==2.2.2
-# For CPU-only smaller Docker image, use the following instead:
-# RUN pip install --no-cache-dir numpy==2.2.4 torch==2.4.1+cpu --index-url https://download.pytorch.org/whl/cpu
-# RUN pip install --no-cache-dir sentence-transformers==2.2.2
+# Install numpy and PyTorch CPU version specifically
+RUN pip install --no-cache-dir numpy==2.2.4 && \
+    pip install --no-cache-dir torch==2.4.1+cpu --extra-index-url https://download.pytorch.org/whl/cpu && \
+    pip install --no-cache-dir sentence-transformers==2.2.2
 
 # Copy the rest of the application
 COPY . .

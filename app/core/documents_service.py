@@ -81,36 +81,49 @@ class DocumentsService:
 
         try:
             import numpy as np
-            from sentence_transformers import SentenceTransformer
-
             self.np = np
-            # Add error handling for SentenceTransformer initialization
+            
+            # Check if VECTOR_EMBEDDING_ENABLED environment variable is set to "False"
+            vector_embedding_enabled = os.environ.get("VECTOR_EMBEDDING_ENABLED", "True").lower() == "true"
+            if not vector_embedding_enabled:
+                logger.info("Vector embeddings disabled by configuration")
+                raise ImportError("Vector embeddings disabled by configuration")
+                
+            # Try to import SentenceTransformer
             try:
-                model_name = os.environ.get("VECTOR_MODEL_NAME", "all-MiniLM-L6-v2")
-                logger.info(f"Initializing vector model: {model_name}")
-                self.vector_model = SentenceTransformer(model_name)
-                logger.info("Vector model initialized successfully")
-            except (ImportError, NameError, Exception) as e:
-                # Log the error
-                logger.error(f"Failed to initialize SentenceTransformer: {str(e)}")
-                logger.error("Document embedding functionality will be limited")
+                from sentence_transformers import SentenceTransformer
                 
-                # Create a placeholder vector model that won't cause further errors
-                class DummyVectorModel:
-                    def encode(self, texts, **kwargs):
-                        # Return zero vectors of appropriate size
-                        import numpy as np
-                        if isinstance(texts, str):
-                            return np.zeros(384)  # Default embedding size for all-MiniLM-L6-v2
-                        return np.zeros((len(texts), 384))
+                # Add error handling for SentenceTransformer initialization
+                try:
+                    model_name = os.environ.get("VECTOR_MODEL_NAME", "all-MiniLM-L6-v2")
+                    logger.info(f"Initializing vector model: {model_name}")
+                    self.vector_model = SentenceTransformer(model_name)
+                    logger.info("Vector model initialized successfully")
+                except (ImportError, NameError, Exception) as e:
+                    # Log the error
+                    logger.error(f"Failed to initialize SentenceTransformer: {str(e)}")
+                    logger.error("Document embedding functionality will be limited")
                     
-                    def __call__(self, texts):
-                        return self.encode(texts)
+                    # Create a placeholder vector model that won't cause further errors
+                    class DummyVectorModel:
+                        def encode(self, texts, **kwargs):
+                            # Return zero vectors of appropriate size
+                            if isinstance(texts, str):
+                                return np.zeros(384)  # Default embedding size for all-MiniLM-L6-v2
+                            return np.zeros((len(texts), 384))
+                        
+                        def __call__(self, texts):
+                            return self.encode(texts)
+                    
+                    self.vector_model = DummyVectorModel()
                 
-                self.vector_model = DummyVectorModel()
-            self.vector_search_enabled = True
-            self.vector_index_path = self.base_path / ".vectors"
-            self.vector_index_path.mkdir(exist_ok=True)
+                self.vector_search_enabled = True
+                self.vector_index_path = self.base_path / ".vectors"
+                self.vector_index_path.mkdir(exist_ok=True)
+                logger.info("Vector search enabled")
+            except ImportError as e:
+                logger.warning(f"SentenceTransformer not available: {str(e)}. Semantic search disabled.")
+                raise
         except ImportError as e:
             logger.warning(f"Vector search dependencies not installed: {str(e)}. Semantic search disabled.")
 
@@ -644,6 +657,7 @@ class DocumentsService:
             logger.debug(f"Successfully saved embeddings for document {doc_id}")
         except Exception as e:
             logger.error(f"Error generating embeddings for document {doc_id}: {str(e)}", exc_info=True)
+            # Don't propagate the error, just log it
 
     def semantic_search(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
         """Search documents semantically using vector similarity"""
