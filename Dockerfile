@@ -21,6 +21,9 @@ RUN pip install --no-cache-dir playwright==1.51.0 && \
 COPY requirements.txt . 
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Explicitly install vector search dependencies
+RUN pip install --no-cache-dir numpy==2.2.4 torch==2.4.1 sentence-transformers==2.2.2
+
 # Copy the rest of the application
 COPY . .
 

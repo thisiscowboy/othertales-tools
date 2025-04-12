@@ -86,12 +86,14 @@ class DocumentsService:
             self.np = np
             # Add error handling for SentenceTransformer initialization
             try:
-                self.vector_model = SentenceTransformer("all-MiniLM-L6-v2")
+                model_name = os.environ.get("VECTOR_MODEL_NAME", "all-MiniLM-L6-v2")
+                logger.info(f"Initializing vector model: {model_name}")
+                self.vector_model = SentenceTransformer(model_name)
+                logger.info("Vector model initialized successfully")
             except (ImportError, NameError, Exception) as e:
                 # Log the error
-                import logging
-                logging.error(f"Failed to initialize SentenceTransformer: {str(e)}")
-                logging.error("Document embedding functionality will be limited")
+                logger.error(f"Failed to initialize SentenceTransformer: {str(e)}")
+                logger.error("Document embedding functionality will be limited")
                 
                 # Create a placeholder vector model that won't cause further errors
                 class DummyVectorModel:
@@ -109,8 +111,8 @@ class DocumentsService:
             self.vector_search_enabled = True
             self.vector_index_path = self.base_path / ".vectors"
             self.vector_index_path.mkdir(exist_ok=True)
-        except ImportError:
-            logger.warning("Vector search dependencies not installed. Semantic search disabled.")
+        except ImportError as e:
+            logger.warning(f"Vector search dependencies not installed: {str(e)}. Semantic search disabled.")
 
         self.index_lock = threading.Lock()
         self.file_locks = {}
@@ -623,15 +625,25 @@ class DocumentsService:
     def generate_embeddings(self, doc_id: str, content: str) -> None:
         """Generate and store embeddings for a document"""
         if not self.vector_search_enabled:
+            logger.debug(f"Vector search not enabled for document {doc_id}")
+            return
+        
+        if not self.vector_model:
+            logger.warning(f"Vector model not initialized for document {doc_id}")
             return
 
         try:
-            embedding = self.vector_model.encode(content[:10000])
-
+            # Truncate content if too long to avoid memory issues
+            truncated_content = content[:10000]
+            logger.debug(f"Generating embeddings for document {doc_id} (content length: {len(truncated_content)})")
+            
+            embedding = self.vector_model.encode(truncated_content)
+            
             embedding_path = self.vector_index_path / f"{doc_id}.npy"
             self.np.save(embedding_path, embedding)
+            logger.debug(f"Successfully saved embeddings for document {doc_id}")
         except Exception as e:
-            logger.error(f"Error generating embeddings for document {doc_id}: {str(e)}")
+            logger.error(f"Error generating embeddings for document {doc_id}: {str(e)}", exc_info=True)
 
     def semantic_search(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
         """Search documents semantically using vector similarity"""
