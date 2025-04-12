@@ -18,8 +18,11 @@ RUN pip install --no-cache-dir playwright==1.51.0 && \
     playwright install-deps chromium
 
 # Copy requirements first for better caching
-COPY requirements.txt . 
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements-docker.txt . 
+RUN pip install --no-cache-dir -r requirements-docker.txt
+
+# Install vector embedding dependencies (sentence-transformers and transformers)
+RUN pip install --no-cache-dir sentence-transformers==2.2.2 transformers==4.37.1 torch==2.0.1
 
 # Copy the rest of the application
 COPY . .
@@ -47,6 +50,10 @@ ENV SEARCH_TIMEOUT=30
 ENV SEARCH_MAX_RETRIES=3
 ENV SEARCH_RETRY_DELAY=2
 ENV USE_GRAPH_DB=False
+ENV VECTOR_EMBEDDING_ENABLED=True
+ENV VECTOR_MODEL_NAME=all-MiniLM-L6-v2
+ENV SCRAPER_DATA_PATH=./data/scraper
+ENV SEARCH_API_KEY=demo-key
 
 # Expose the API port
 EXPOSE 8000

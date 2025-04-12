@@ -2,6 +2,7 @@ from fastapi import FastAPI, Depends, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from typing import Optional, Dict, Any
+from contextlib import asynccontextmanager
 from app.api import filesystem, memory, git, scraper, documents, scheduler
 from app.utils.config import get_config
 import logging
@@ -13,10 +14,67 @@ logger = logging.getLogger(__name__)
 # Get configuration
 config = get_config()
 
+# Store initialized services at module level for global access
+app_services = {}
+
+# API description for OpenAPI docs
+API_DESCRIPTION = "A unified server providing filesystem, memory, git, web scraping, and document management tools for LLMs via OpenWebUI."
+
+@asynccontextmanager
+async def lifespan(app):
+    """Lifespan handler for FastAPI to initialize and clean up services"""
+    logger.info("Starting up server and initializing services")
+    
+    # Initialize services
+    from app.core.scheduler_service import SchedulerService
+    from app.core.scraper_service import ScraperService
+    from app.api.scheduler import router as scheduler_router
+    from app.api.scraper import scraper_service
+    
+    # Ensure data directories exist
+    import os
+    os.makedirs("./data/scraper", exist_ok=True)
+    os.makedirs("./data/scraper/scheduled_jobs", exist_ok=True)
+    os.makedirs("./data/scraper/scheduled_jobs/runs", exist_ok=True)
+    
+    # Create scheduler service instance
+    scheduler_service = SchedulerService(
+        scraper_service=scraper_service  # Use existing scraper service
+    )
+    
+    # Store all services in module variable for global access
+    app_services['scheduler'] = scheduler_service
+    app_services['scraper'] = scraper_service
+    
+    # Make scheduler service available to the API router
+    scheduler_router.scheduler_service = scheduler_service
+    
+    # Start the scheduler service
+    scheduler_service.start()
+    logger.info("All services initialized and started")
+    
+    yield
+    
+    # Shutdown all services in reverse initialization order
+    logger.info("Shutting down server and cleaning up services")
+    
+    if 'scheduler' in app_services:
+        app_services['scheduler'].shutdown()
+        logger.info("Scheduler service shut down")
+    
+    # Shutdown scraper service to release browser resources
+    if 'scraper' in app_services:
+        # Ensure we use await for async shutdown
+        await app_services['scraper'].shutdown()
+        logger.info("Scraper service shut down")
+        
+    logger.info("All services shut down successfully")
+
 app = FastAPI(
     title="OtherTales System Tools",
     version="1.0.0",
-    description="A unified server providing filesystem, memory, git, web scraping, and document management tools for LLMs via OpenWebUI.",
+    description=API_DESCRIPTION,
+    lifespan=lifespan,
 )
 
 # Configure CORS specifically for Open WebUI compatibility
@@ -48,99 +106,136 @@ async def verify_api_key(
 ):
     # Skip API key verification if disabled
     if not config.api_key_required:
-        return {"role": "default"}
+        return True
     
-    # Check for API key in header or query parameter
-    api_key = x_api_key
-    if not api_key and "api_key" in request.query_params:
-        api_key = request.query_params["api_key"]
+    if x_api_key is None:
+        # Check for api_key in query params as fallback (less secure method)
+        x_api_key = request.query_params.get("api_key")
+        
+    if x_api_key is None:
+        raise HTTPException(
+            status_code=401,
+            detail="API Key is required",
+            headers={"WWW-Authenticate": "ApiKey"},
+        )
     
-    if not api_key:
-        raise HTTPException(status_code=401, detail="API key is required")
+    # Get API keys from config
+    default_api_key = config.api_keys.get("default", "")
+    admin_api_key = config.api_keys.get("admin", "")
     
-    # Verify API key
-    if api_key == config.api_keys["admin"]:
-        return {"role": "admin"}
-    elif api_key == config.api_keys["default"]:
-        if require_admin:
-            raise HTTPException(status_code=403, detail="Admin privileges required")
-        return {"role": "default"}
-    else:
-        raise HTTPException(status_code=401, detail="Invalid API key")
+    # For admin-only operations, require admin key
+    if require_admin:
+        if x_api_key != admin_api_key:
+            # Use 403 instead of 401 to indicate key was provided but lacks permissions
+            raise HTTPException(
+                status_code=403,
+                detail="Admin API Key is required for this operation",
+                headers={"WWW-Authenticate": "ApiKey"},
+            )
+        return True
+    
+    # For standard operations, allow either default or admin key
+    if x_api_key != default_api_key and x_api_key != admin_api_key:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid API Key",
+            headers={"WWW-Authenticate": "ApiKey"},
+        )
+    
+    return True
 
 # Admin-only dependency
-async def admin_only(auth_data = Depends(verify_api_key)):
-    if auth_data["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Admin privileges required")
-    return auth_data
+async def admin_only(
+    request: Request,
+    x_api_key: Optional[str] = Header(None),
+):
+    return await verify_api_key(request, x_api_key, require_admin=True)
 
-# Include routers with well-defined tags for better OpenAPI organization
-# Standard API endpoints with regular API key authentication
+# Mount API routers with appropriate prefixes and tags
 app.include_router(
-    filesystem.router, 
-    prefix="/fs", 
+    filesystem.router,
+    prefix="/filesystem",
     tags=["Filesystem"],
-    dependencies=[Depends(verify_api_key)] if config.api_key_required else None
-)
-app.include_router(
-    memory.router, 
-    prefix="/memory", 
-    tags=["Memory"],
-    dependencies=[Depends(verify_api_key)] if config.api_key_required else None
-)
-app.include_router(
-    git.router, 
-    prefix="/git", 
-    tags=["Git"],
-    dependencies=[Depends(verify_api_key)] if config.api_key_required else None
-)
-app.include_router(
-    scraper.router, 
-    prefix="/scraper", 
-    tags=["Web Scraper"],
-    dependencies=[Depends(verify_api_key)] if config.api_key_required else None
-)
-app.include_router(
-    documents.router, 
-    prefix="/docs", 
-    tags=["Document Management"],
-    dependencies=[Depends(verify_api_key)] if config.api_key_required else None
-)
-app.include_router(
-    scheduler.router, 
-    prefix="/scheduler", 
-    tags=["Job Scheduler"],
-    dependencies=[Depends(admin_only)] if config.api_key_required else None
+    dependencies=[Depends(verify_api_key)] if config.api_key_required else []
 )
 
-# Admin API router for server management
+app.include_router(
+    memory.router,
+    prefix="/memory",
+    tags=["Memory"],
+    dependencies=[Depends(verify_api_key)] if config.api_key_required else []
+)
+
+app.include_router(
+    git.router,
+    prefix="/git",
+    tags=["Git"],
+    dependencies=[Depends(verify_api_key)] if config.api_key_required else []
+)
+
+app.include_router(
+    scraper.router,
+    prefix="/scraper",
+    tags=["Web Scraper"],
+    dependencies=[Depends(verify_api_key)] if config.api_key_required else []
+)
+
+app.include_router(
+    documents.router,
+    prefix="/documents",
+    tags=["Documents"],
+    dependencies=[Depends(verify_api_key)] if config.api_key_required else []
+)
+
+app.include_router(
+    scheduler.router,
+    prefix="/scheduler",
+    tags=["Scheduler"],
+    dependencies=[Depends(verify_api_key)] if config.api_key_required else []
+)
+
+# Create admin router for system management
 from fastapi import APIRouter
+
 admin_router = APIRouter()
 
-@admin_router.get("/status")
-async def admin_status():
-    """Get server status information - admin only endpoint"""
+@admin_router.get("/info")
+async def admin_info():
+    """Get system information for administration"""
+    from os import path
+    import sys
+    import platform
+    
     return {
-        "status": "running",
-        "version": app.version,
+        "python_version": sys.version,
+        "platform": platform.platform(),
+        "hostname": platform.node(),
+        "app_version": app.version,
         "config": {
-            "api_key_required": config.api_key_required,
+            # Provide only non-sensitive configuration
+            "dev_mode": config.dev_mode,
             "admin_endpoints_enabled": config.admin_endpoints_enabled,
+            "api_key_required": config.api_key_required,
+            "file_cache_enabled": config.file_cache_enabled,
+            "file_cache_max_age": config.file_cache_max_age,
             "vector_embedding_enabled": config.vector_embedding_enabled,
-            "knowledge_graph_auto_link": config.knowledge_graph_auto_link,
+            "vector_model_name": config.vector_model_name,
+            "search_provider": config.search_provider,
+            "use_graph_db": config.use_graph_db,
         }
     }
 
 @admin_router.post("/settings")
 async def update_settings(settings: Dict[str, Any]):
-    """Update server settings - admin only endpoint"""
-    # Update the allowed settings
+    """Update server settings (admin only)"""
+    # Only allow changing specific settings
     allowed_settings = [
-        "api_key_required", 
-        "vector_embedding_enabled", 
+        "api_key_required",
+        "vector_embedding_enabled",
         "knowledge_graph_auto_link",
         "scraper_min_delay",
-        "scraper_max_delay"
+        "scraper_max_delay",
+        "user_agent",
     ]
     
     updated = {}
@@ -251,54 +346,6 @@ async def root():
         "openapi_url": "/openapi.json",
         "auth_required": config.api_key_required,
     }
-
-# Store initialized services at module level for global access
-app_services = {}
-
-@app.on_event("startup")
-async def startup_event():
-    """Startup event handler to initialize services"""
-    logger.info("Starting up server and initializing services")
-    
-    # Initialize services
-    from app.core.scheduler_service import SchedulerService
-    from app.core.scraper_service import ScraperService
-    from app.api.scheduler import router as scheduler_router
-    from app.api.scraper import scraper_service
-    
-    # Create scheduler service instance
-    scheduler_service = SchedulerService(
-        scraper_service=scraper_service  # Use existing scraper service
-    )
-    
-    # Store all services in module variable for global access
-    app_services['scheduler'] = scheduler_service
-    app_services['scraper'] = scraper_service
-    
-    # Make scheduler service available to the API router
-    scheduler_router.scheduler_service = scheduler_service
-    
-    # Start the scheduler service
-    scheduler_service.start()
-    logger.info("All services initialized and started")
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Shutdown event handler to clean up services"""
-    logger.info("Shutting down server and cleaning up services")
-    
-    # Shutdown all services in reverse initialization order
-    if 'scheduler' in app_services:
-        app_services['scheduler'].shutdown()
-        logger.info("Scheduler service shut down")
-    
-    # Shutdown scraper service to release browser resources
-    if 'scraper' in app_services:
-        # Ensure we use await for async shutdown
-        await app_services['scraper'].shutdown()
-        logger.info("Scraper service shut down")
-        
-    logger.info("All services shut down successfully")
 
 if __name__ == "__main__":
     import uvicorn

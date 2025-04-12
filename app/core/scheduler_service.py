@@ -66,6 +66,9 @@ class SchedulerService:
     def _save_jobs(self, jobs_data: Dict[str, Any]):
         """Save scheduled jobs to storage"""
         try:
+            # Create parent directory if it doesn't exist
+            os.makedirs(os.path.dirname(self.jobs_file), exist_ok=True)
+            
             # Create a temp file for atomic write
             temp_file = f"{self.jobs_file}.tmp"
             with open(temp_file, 'w', encoding='utf-8') as f:
@@ -73,6 +76,7 @@ class SchedulerService:
                 
             # Ensure the file is written to disk
             f.flush()
+            os.fsync(f.fileno())
             
             # Rename for atomic replace (works on both Windows and Unix)
             if os.path.exists(self.jobs_file):
@@ -81,7 +85,7 @@ class SchedulerService:
                 os.rename(temp_file, self.jobs_file)
                 
         except Exception as e:
-            logger.error(f"Error saving scheduled jobs: {e}")
+            logger.error(f"Error saving scheduled jobs: {e}", exc_info=True)
 
     def _get_current_jobs(self) -> Dict[str, Any]:
         """Get all current job configurations"""
