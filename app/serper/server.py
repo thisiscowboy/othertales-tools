@@ -9,8 +9,9 @@ from typing import List, Dict, Any, Optional, Union
 from urllib.parse import unquote
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Query, Path
+from fastapi import FastAPI, HTTPException, Query, Path, Depends, Header, Security
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
@@ -28,6 +29,38 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Initialize API key security
+API_KEY = os.getenv("API_KEY")
+if not API_KEY:
+    logger.warning("API_KEY not set in environment variables. API will be accessible without authentication.")
+
+api_key_header = APIKeyHeader(name="Authorization", auto_error=False)
+
+async def get_api_key(authorization: Optional[str] = Header(None)):
+    if not API_KEY:
+        return True  # If no API key is set, allow all requests
+    
+    if not authorization:
+        raise HTTPException(
+            status_code=401,
+            detail="Missing Authorization header with Bearer token"
+        )
+    
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer":
+        raise HTTPException(
+            status_code=401,
+            detail="Authorization header must be in format: Bearer YOUR_API_KEY"
+        )
+    
+    if token != API_KEY:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid API key"
+        )
+    
+    return True
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -87,6 +120,7 @@ async def crawl_url(
     remove_selector: Optional[str] = Query(None, description="CSS selector for elements to remove"),
     timeout: Optional[int] = Query(30, description="Timeout in seconds"),
     with_screenshots: Optional[bool] = Query(False, description="Include screenshots in response"),
+    authenticated: bool = Depends(get_api_key),
 ):
     """
     Crawl a URL and return its content in the specified format.
@@ -112,7 +146,10 @@ async def crawl_url(
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 @app.post("/embeddings", response_model=EmbeddingResponse)
-async def generate_embeddings(request: EmbeddingRequest):
+async def generate_embeddings(
+    request: EmbeddingRequest,
+    authenticated: bool = Depends(get_api_key),
+):
     """
     Generate embeddings for the provided text or texts.
     """
@@ -134,6 +171,7 @@ async def search(
     num: Optional[int] = Query(10, description="Number of results"),
     variant: Optional[str] = Query("web", description="Search type (web, images, news)"),
     page: Optional[int] = Query(1, description="Page number"),
+    authenticated: bool = Depends(get_api_key),
 ):
     """
     Perform a search using the configured search engine.
@@ -154,6 +192,7 @@ async def search(
 async def compare_similarity(
     text1: str = Query(..., description="First text to compare"),
     text2: str = Query(..., description="Second text to compare"),
+    authenticated: bool = Depends(get_api_key),
 ):
     """
     Calculate cosine similarity between two text strings.
@@ -164,6 +203,18 @@ async def compare_similarity(
     except Exception as e:
         logger.error("Error calculating similarity: %s", str(e))
         raise HTTPException(status_code=500, detail=str(e)) from e
+
+# Get API key information
+@app.get("/api-key-info")
+async def api_key_info():
+    """
+    Returns information about API key configuration.
+    """
+    return {
+        "requires_api_key": bool(API_KEY),
+        "api_key_header": "Authorization",
+        "format": "Bearer YOUR_API_KEY"
+    }
 
 # Main entry point
 if __name__ == "__main__":

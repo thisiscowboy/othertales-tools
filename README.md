@@ -46,5 +46,20 @@ In OpenWebUI, add a new Tool with the following URL:
 ```
 http://localhost:8000/openapi.json
 ```
+
+### API Key Authentication
+The serper service supports Bearer token authentication:
+
+1. Configure your API key in the `.env` file:
+   ```
+   API_KEY=your_secure_api_key_here
+   ```
+
+2. When using OpenWebUI, add the API key in the Bearer token field:
+   - When adding the tool, expand the "Authorization" section
+   - Select "Bearer" as the authentication type
+   - Enter your API key in the token field
+
+The API key info endpoint (`/api-key-info`) provides information about whether API key authentication is enabled.
 ## License
 SEE EULA
